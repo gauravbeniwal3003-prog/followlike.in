@@ -20,24 +20,19 @@ import {
   FileCode,
   Shield,
   Zap,
-  Ticket,
-  Mail,
   RefreshCw,
   TrendingUp,
   CreditCard,
   Menu,
-  X
+  X,
+  MessageSquare
 } from 'lucide-react';
-import { SMMService, SMMOrder, SupportTicket, Transaction, UserSession } from '../types';
+import { SMMService, SMMOrder, Transaction, UserSession } from '../types';
 import { 
   syncUserProfile, 
   updateDbBalance, 
   getDbOrders, 
   createDbOrder, 
-  getDbTickets, 
-  createDbTicket, 
-  createDbTicketReply, 
-  updateDbTicketStatus, 
   logDbTransaction, 
   getDbTransactions,
   DATABASE_SQL_INSTRUCTIONS,
@@ -49,9 +44,10 @@ interface DashboardProps {
   onLogout: () => void;
   servicesCatalog: SMMService[];
   initialOrders: SMMOrder[];
-  initialTickets: SupportTicket[];
   globalSettings: { landing_video_url: string; profit_markup_percent: number };
   onUpdateSettings: (newSett: { landing_video_url: string; profit_markup_percent: number }) => void;
+  refreshServices: (forceSync?: boolean) => Promise<boolean>;
+  refreshingServices: boolean;
 }
 
 export default function Dashboard({
@@ -59,19 +55,19 @@ export default function Dashboard({
   onLogout,
   servicesCatalog,
   initialOrders,
-  initialTickets,
   globalSettings,
-  onUpdateSettings
+  onUpdateSettings,
+  refreshServices,
+  refreshingServices
 }: DashboardProps) {
   // Navigation Tabs state including 'admin'
-  const [activeTab, setActiveTab] = useState<'home' | 'new-order' | 'orders' | 'services' | 'funds' | 'tickets' | 'profile' | 'menu' | 'admin'>('orders');
+  const [activeTab, setActiveTab] = useState<'home' | 'new-order' | 'orders' | 'services' | 'funds' | 'profile' | 'support' | 'menu' | 'admin'>('home');
   
   // Mobile Sidebar switcher state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // User Supabase & Local state hooks
   const [orders, setOrders] = useState<SMMOrder[]>([]);
-  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [currentBalance, setCurrentBalance] = useState<number>(session.balance);
   const [apiKey, setApiKey] = useState<string>(session.apiKey || 'smm_KEY847294JSKDS9');
@@ -105,12 +101,6 @@ export default function Dashboard({
   const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount_percent: number } | null>(null);
   const [couponValidationNotice, setCouponValidationNotice] = useState<string | null>(null);
 
-  // 4. Tickets
-  const [ticketSubject, setTicketSubject] = useState<string>('');
-  const [ticketMsg, setTicketMsg] = useState<string>('');
-  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
-  const [ticketReplyMsg, setTicketReplyMsg] = useState<string>('');
-  const [ticketNotification, setTicketNotification] = useState<string | null>(null);
   const [profileNotice, setProfileNotice] = useState<string | null>(null);
 
   // 5. Automated SMM API Sync
@@ -148,28 +138,28 @@ export default function Dashboard({
     setAdminLoading(true);
     try {
       // Fetch users
-      const usersRes = await fetch('https://followlike-in.onrender.com/api/smm/admin/users');
+      const usersRes = await fetch('/api/smm/admin/users');
       const usersData = await usersRes.json();
       if (usersData && usersData.success) {
         setAdminUsers(usersData.users);
       }
 
       // Fetch coupons
-      const couponsRes = await fetch('https://followlike-in.onrender.com/api/smm/coupons');
+      const couponsRes = await fetch('/api/smm/coupons');
       const couponsData = await couponsRes.json();
       if (couponsData && couponsData.success) {
         setAdminCoupons(couponsData.coupons);
       }
 
       // Fetch transactions
-      const txRes = await fetch('https://followlike-in.onrender.com/api/smm/admin/transactions');
+      const txRes = await fetch('/api/smm/admin/transactions');
       const txData = await txRes.json();
       if (txData && txData.success) {
         setAdminTransactions(txData.transactions);
       }
 
       // Fetch orders
-      const ordersRes = await fetch('https://followlike-in.onrender.com/api/smm/admin/orders');
+      const ordersRes = await fetch('/api/smm/admin/orders');
       const ordersData = await ordersRes.json();
       if (ordersData && ordersData.success) {
         setAdminOrders(ordersData.orders);
@@ -191,7 +181,7 @@ export default function Dashboard({
     const amount = parseFloat(amountStr);
     if (isNaN(amount)) return;
     try {
-      const res = await fetch('https://followlike-in.onrender.com/api/smm/admin/users/update-balance', {
+      const res = await fetch('/api/smm/admin/users/update-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, balance: amount })
@@ -212,7 +202,7 @@ export default function Dashboard({
   const handleToggleAdminStatus = async (email: string, currentVal: boolean) => {
     const newVal = !currentVal;
     try {
-      const res = await fetch('https://followlike-in.onrender.com/api/smm/admin/users/toggle-admin', {
+      const res = await fetch('/api/smm/admin/users/toggle-admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, is_admin: newVal })
@@ -230,7 +220,7 @@ export default function Dashboard({
     e.preventDefault();
     if (!newCouponCode.trim()) return;
     try {
-      const res = await fetch('https://followlike-in.onrender.com/api/smm/coupons/create', {
+      const res = await fetch('/api/smm/coupons/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -252,7 +242,7 @@ export default function Dashboard({
 
   const handleDeleteCoupon = async (code: string) => {
     try {
-      const res = await fetch('https://followlike-in.onrender.com/api/smm/coupons/delete', {
+      const res = await fetch('/api/smm/coupons/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code })
@@ -270,7 +260,7 @@ export default function Dashboard({
     e.preventDefault();
     setSettingsStatus('Saving settings update...');
     try {
-      const res = await fetch('https://followlike-in.onrender.com/api/smm/settings/update', {
+      const res = await fetch('/api/smm/settings/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -345,36 +335,7 @@ export default function Dashboard({
         }
       }
 
-      // 3. Fetch tickets
-      const dbTickets = await getDbTickets(session.email);
-      if (dbTickets && dbTickets.length > 0) {
-        setTickets(dbTickets);
-        localStorage.setItem(`tickets_${session.email}`, JSON.stringify(dbTickets));
-      } else {
-        // Fallback or seed initial tickets
-        const savedTickets = localStorage.getItem(`tickets_${session.email}`);
-        if (savedTickets) {
-          const parsed = JSON.parse(savedTickets);
-          setTickets(parsed);
-          for (const tck of parsed) {
-            await createDbTicket(session.email, tck);
-            for (const rep of tck.replies) {
-              await createDbTicketReply(tck.id, rep);
-            }
-          }
-        } else {
-          setTickets(initialTickets);
-          localStorage.setItem(`tickets_${session.email}`, JSON.stringify(initialTickets));
-          for (const tck of initialTickets) {
-            await createDbTicket(session.email, tck);
-            for (const rep of tck.replies) {
-              await createDbTicketReply(tck.id, rep);
-            }
-          }
-        }
-      }
-
-      // 4. Fetch transactions
+      // 3. Fetch transactions
       const dbTx = await getDbTransactions(session.email);
       setTransactions(dbTx);
     } catch (err: any) {
@@ -383,9 +344,6 @@ export default function Dashboard({
       
       const savedOrders = localStorage.getItem(`orders_${session.email}`);
       setOrders(savedOrders ? JSON.parse(savedOrders) : initialOrders);
-
-      const savedTickets = localStorage.getItem(`tickets_${session.email}`);
-      setTickets(savedTickets ? JSON.parse(savedTickets) : initialTickets);
 
       const savedBalance = localStorage.getItem(`balance_${session.email}`);
       setCurrentBalance(savedBalance ? parseFloat(savedBalance) : session.balance);
@@ -402,11 +360,6 @@ export default function Dashboard({
   const saveOrdersToStorage = async (newOrders: SMMOrder[]) => {
     setOrders(newOrders);
     localStorage.setItem(`orders_${session.email}`, JSON.stringify(newOrders));
-  };
-
-  const saveTicketsToStorage = async (newTickets: SupportTicket[]) => {
-    setTickets(newTickets);
-    localStorage.setItem(`tickets_${session.email}`, JSON.stringify(newTickets));
   };
 
   const saveBalanceToStorage = async (newBal: number) => {
@@ -436,7 +389,7 @@ export default function Dashboard({
     }
 
     try {
-      const response = await fetch('https://followlike-in.onrender.com/api/smm/status-sync', {
+      const response = await fetch('/api/smm/status-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orders: targetOrders })
@@ -541,8 +494,19 @@ export default function Dashboard({
     }
   }, [orders]);
 
-  // Get unique categories for menus
-  const categories = Array.from(new Set(servicesCatalog.map(s => s.category)));
+  // Get unique categories for menus, prioritizing key platforms
+  const categories = (() => {
+    const rawCats = Array.from(new Set(servicesCatalog.map(s => s.category)));
+    const priority = ['Instagram', 'YouTube', 'Twitter', 'TikTok'];
+    return [...rawCats].sort((a, b) => {
+      const idxA = priority.findIndex(p => a.toLowerCase().includes(p.toLowerCase()));
+      const idxB = priority.findIndex(p => b.toLowerCase().includes(p.toLowerCase()));
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  })();
 
   // Filter service selections based on selected Category in New Order Form
   const filteredServicesForOrder = servicesCatalog.filter(s => s.category === selectedCategory);
@@ -598,7 +562,7 @@ export default function Dashboard({
     setOrderNotification({ type: 'success', text: 'Routing order automatically to provider API...' });
 
     try {
-      const res = await fetch('https://followlike-in.onrender.com/api/smm/order', {
+      const res = await fetch('/api/smm/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -691,7 +655,7 @@ export default function Dashboard({
     }
     setCouponValidationNotice('Validating coupon...');
     try {
-      const res = await fetch('https://followlike-in.onrender.com/api/smm/coupons/apply', {
+      const res = await fetch('/api/smm/coupons/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: couponCode, email: session.email })
@@ -758,103 +722,6 @@ export default function Dashboard({
       setFundsNotification('Failed to process transaction on your Supabase ledger. Please confirm sql rules.');
     }
     setTimeout(() => setFundsNotification(null), 8000);
-  };
-
-  // Action: Create Support Ticket
-  const handleCreateTicket = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ticketSubject || !ticketMsg) {
-      setTicketNotification('Please fill in both subject and Message fields.');
-      return;
-    }
-
-    const newTicket: SupportTicket = {
-      id: 'TCK-' + Math.floor(1000 + Math.random() * 9000),
-      subject: ticketSubject,
-      message: ticketMsg,
-      status: 'Open',
-      replies: [],
-      createdAt: new Date().toISOString()
-    };
-
-    const inserted = await createDbTicket(session.email, newTicket);
-    if (inserted) {
-      const updatedTickets = [newTicket, ...tickets];
-      await saveTicketsToStorage(updatedTickets);
-      setTicketSubject('');
-      setTicketMsg('');
-      setTicketNotification(`Ticket ${newTicket.id} was created successfully! Our support agents will check the details shortly.`);
-
-      // Simulate reactive customer support action on the panel after 5 seconds!
-      setTimeout(async () => {
-        try {
-          const supportReply = {
-            id: 'rep-' + Math.floor(100 + Math.random() * 900),
-            sender: 'support' as const,
-            message: `👋 Hi! This is automated customer support regarding your ticket "${newTicket.subject}". We have checked your order, and everything is set up and running smoothly. Please let us know if you have any other questions!`,
-            createdAt: new Date().toISOString()
-          };
-          const replyInserted = await createDbTicketReply(newTicket.id, supportReply);
-          if (replyInserted) {
-            await updateDbTicketStatus(newTicket.id, 'Answered');
-            const freshTickets = await getDbTickets(session.email);
-            setTickets(freshTickets);
-          }
-        } catch (err) {
-          console.error(err);
-        }
-      }, 5000);
-    } else {
-      setTicketNotification('Could not create ticket. Please check your database tables.');
-    }
-
-    setTimeout(() => setTicketNotification(null), 8000);
-  };
-
-  // Action: Reply to Ticket
-  const handleReplyTicket = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ticketReplyMsg.trim() || !activeTicketId) return;
-
-    const matchedIdx = tickets.findIndex(t => t.id === activeTicketId);
-    if (matchedIdx > -1) {
-      const userReplyObj = {
-        id: 'user-rep-' + Math.floor(100 + Math.random() * 900),
-        sender: 'user' as const,
-        message: ticketReplyMsg,
-        createdAt: new Date().toISOString()
-      };
-
-      const replyInserted = await createDbTicketReply(activeTicketId, userReplyObj);
-      if (replyInserted) {
-        await updateDbTicketStatus(activeTicketId, 'Open');
-        const updatedList = [...tickets];
-        updatedList[matchedIdx].replies.push(userReplyObj);
-        updatedList[matchedIdx].status = 'Open';
-        await saveTicketsToStorage(updatedList);
-        setTicketReplyMsg('');
-
-        // Simulate followup support answer
-        setTimeout(async () => {
-          try {
-            const supportReplyObj = {
-              id: 'rep-' + Math.floor(100 + Math.random() * 900),
-              sender: 'support' as const,
-              message: 'Acknowledged! Our systems have processed this verification block. Action status logs are updating on your transaction portal.',
-              createdAt: new Date().toISOString()
-            };
-            const sReplyInserted = await createDbTicketReply(activeTicketId, supportReplyObj);
-            if (sReplyInserted) {
-              await updateDbTicketStatus(activeTicketId, 'Answered');
-              const freshTickets = await getDbTickets(session.email);
-              setTickets(freshTickets);
-            }
-          } catch (err) {
-            console.error(err);
-          }
-        }, 5000);
-      }
-    }
   };
 
   // Action: API token regeneration
@@ -942,14 +809,6 @@ export default function Dashboard({
                 title="System Status"
               >
                 <Globe className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={() => setActiveTab('tickets')}
-                className="p-1.5 rounded-full border border-white/5 bg-white/[0.02] hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
-                title="Support Helpdesk"
-              >
-                <Mail className="w-4 h-4" />
               </button>
 
               {/* WALLET LEDGER CARD CONTAINER */}
@@ -1042,23 +901,18 @@ export default function Dashboard({
               }`}
             >
               <CreditCard className="w-4 h-4 mr-3" />
-              Simulated Funds Topup
+              Add Funds / Wallet
             </button>
 
             <button
-              id="sidebar-tab-tickets"
-              onClick={() => setActiveTab('tickets')}
+              id="sidebar-tab-support"
+              onClick={() => setActiveTab('support')}
               className={`w-full flex items-center px-4 py-3 text-xs font-medium rounded-lg transition-all ${
-                activeTab === 'tickets' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
+                activeTab === 'support' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
               }`}
             >
-              <Ticket className="w-4 h-4 mr-3" />
-              Support & Inquiries
-              {tickets.filter(t => t.status === 'Answered').length > 0 && (
-                <span className="ml-auto px-1.5 py-0.5 rounded-full bg-white text-black font-mono text-[9px] font-semibold animate-pulse">
-                  ACT
-                </span>
-              )}
+              <MessageSquare className="w-4 h-4 mr-3" />
+              WhatsApp Support
             </button>
 
             <button
@@ -1069,7 +923,7 @@ export default function Dashboard({
               }`}
             >
               <User className="w-4 h-4 mr-3" />
-              Profile & SQL Setup
+              Account Settings
             </button>
 
             {(session.isAdmin || session.email === 'gauravbeniwal30003@gmail.com') && (
@@ -1106,7 +960,7 @@ export default function Dashboard({
                     <div className="w-6 h-6 rounded bg-white flex items-center justify-center font-bold text-black text-xs">
                       S
                      </div>
-                    <span className="text-sm font-semibold text-white font-mono">SMM NEXUS</span>
+                    <span className="text-sm font-semibold text-white font-mono">SOCIAL UP HUB</span>
                   </div>
                   <button
                     onClick={() => setIsMobileMenuOpen(false)}
@@ -1117,15 +971,15 @@ export default function Dashboard({
                 </div>
 
                 <div className="space-y-1.5">
-                  {[
-                    { key: 'home', label: 'Home Dashboard', icon: Globe },
-                    { key: 'new-order', label: 'New Order Form', icon: PlusCircle },
-                    { key: 'orders', label: 'Order Placements', icon: Clock },
-                    { key: 'services', label: 'Services Catalogue', icon: Layers },
-                    { key: 'funds', label: 'Simulated Funds', icon: CreditCard },
-                    { key: 'tickets', label: 'Tickets Support', icon: Ticket },
-                    { key: 'profile', label: 'Profile & Database', icon: User }
-                  ].map((tab) => {
+                    {[
+                      { key: 'home', label: 'Home Dashboard', icon: Globe },
+                      { key: 'new-order', label: 'New Order Form', icon: PlusCircle },
+                      { key: 'orders', label: 'Order Placements', icon: Clock },
+                      { key: 'services', label: 'Services Catalogue', icon: Layers },
+                      { key: 'funds', label: 'Add Funds', icon: CreditCard },
+                      { key: 'support', label: 'WhatsApp Support', icon: MessageSquare },
+                      { key: 'profile', label: 'Account Profile', icon: User }
+                    ].map((tab) => {
                     const TabIcon = tab.icon;
                     return (
                       <button
@@ -1218,9 +1072,9 @@ export default function Dashboard({
                 </div>
 
                 <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Support Tickets</div>
-                  <div className="text-2xl font-bold font-mono text-white">{tickets.length} Active</div>
-                  <button onClick={() => setActiveTab('tickets')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Get Support →</button>
+                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Support Help</div>
+                  <div className="text-2xl font-bold font-mono text-white">WhatsApp</div>
+                  <a href="https://wa.me/919999999999" target="_blank" rel="noreferrer" className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Contact Support →</a>
                 </div>
               </div>
 
@@ -1729,20 +1583,32 @@ export default function Dashboard({
                   <p className="text-xs text-neutral-400 mt-0.5">Browse all available services, prices, and limits.</p>
                 </div>
 
-                {/* Sub search input */}
-                <div className="w-full sm:w-60">
-                  <div className="relative">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
-                      <Search className="w-3.5 h-3.5" />
-                    </span>
-                    <input
-                      id="dash-services-search"
-                      type="text"
-                      placeholder="Search services..."
-                      value={servicesSearch}
-                      onChange={(e) => setServicesSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 text-xs text-white rounded-lg glass-input"
-                    />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => refreshServices(true)}
+                    disabled={refreshingServices}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold font-mono tracking-tight uppercase bg-white/5 border border-white/10 text-neutral-300 rounded-lg hover:bg-white/10 transition-all ${
+                      refreshingServices ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${refreshingServices ? 'animate-spin' : ''}`} />
+                    {refreshingServices ? 'Refreshing...' : 'Refresh Catalog'}
+                  </button>
+                  {/* Sub search input */}
+                  <div className="w-full sm:w-60">
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
+                        <Search className="w-3.5 h-3.5" />
+                      </span>
+                      <input
+                        id="dash-services-search"
+                        type="text"
+                        placeholder="Search services..."
+                        value={servicesSearch}
+                        onChange={(e) => setServicesSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 text-xs text-white rounded-lg glass-input"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1820,7 +1686,7 @@ export default function Dashboard({
             </div>
           )}
 
-          {/* TAB 4: ADD FUNDS (Simulated Deposit ledger) */}
+          {/* TAB 4: ADD FUNDS (Secure Deposit) */}
           {activeTab === 'funds' && (
             <div id="view-dashboard-funds" className="space-y-6">
               
@@ -1832,11 +1698,11 @@ export default function Dashboard({
                     Secure Payment Gateway
                   </h2>
                   <p className="text-xs text-neutral-400 mt-1 leading-normal">
-                    Enter direct funds value below. Deposit simulators process simulation instances instantly to your wallet parameter ledger.
+                    Enter funds value below. Deposits are processed instantly to your wallet.
                   </p>
                 </div>
                 <div className="text-sm font-mono font-bold text-white bg-white/[0.04] px-4 py-2 border border-white/5 rounded-lg whitespace-nowrap">
-                  Ledger Balance: ₹{currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  Wallet Balance: ₹{currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
               </div>
 
@@ -1864,9 +1730,6 @@ export default function Dashboard({
                       className="w-full px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all"
                     >
                       <option value="Razorpay Netbanking">Razorpay INR Gateway (UPI, Cards, Netbanking)</option>
-                      <option value="Paytm UPI Direct Relay">Paytm UPI instant QR relay</option>
-                      <option value="UPI Pay / Google Pay API">Google Pay / PhonePe instant</option>
-                      <option value="Stripe (Cards)">Stripe (International Visa/Mastercard)</option>
                     </select>
                   </div>
 
@@ -1890,7 +1753,7 @@ export default function Dashboard({
                       />
                     </div>
                     <p className="mt-1.5 text-[10px] text-neutral-500 font-sans">
-                      Standard limits range from minimum ₹100.00 to maximum ₹100,000.00 mock credits per transaction.
+                      Standard limits range from minimum ₹100.00 to maximum ₹100,000.00 per transaction.
                     </p>
                   </div>
 
@@ -1973,19 +1836,15 @@ export default function Dashboard({
 
                   <div className="space-y-3 leading-relaxed text-neutral-400">
                     <p>
-                      Deposits execute immediately and post directly to your mock sandbox user wallet parameters which reside in browser state storage.
+                      Deposits execute immediately and post directly to your user wallet account.
                     </p>
                     
                     <div className="p-3.5 rounded-xl bg-black text-[11px] border border-white/5 space-y-1.5">
                       <span className="font-semibold text-white block">📌 Non-Refundable Agreement:</span>
                       <p className="leading-normal">
-                        As explicitly stipulated in SMM Glass guidelines, our platform has a strict <span className="text-white font-bold underline">NO REFUND POLICY</span>. Once mock currencies reside inside billing registers, withdrawal processes are locked out. Campaign settlement charge deducts are irreversibly executed.
+                        As explicitly stipulated in SMM Nexus guidelines, our platform has a strict <span className="text-white font-bold underline">NO REFUND POLICY</span>. Once funds are deposited, they are irreversibly credited.
                       </p>
                     </div>
-
-                    <p className="text-[10px] font-mono text-neutral-500">
-                      Payment engine code: MOCK_STRIPE_INT_v5
-                    </p>
                   </div>
 
                 </div>
@@ -1994,226 +1853,54 @@ export default function Dashboard({
             </div>
           )}
 
-          {/* TAB 5: TICKETS AND CUSTOMER SUPPORT */}
-          {activeTab === 'tickets' && (
-            <div id="view-dashboard-tickets" className="space-y-6">
+          {/* TAB 5: WHATSAPP CUSTOMER SUPPORT */}
+          {activeTab === 'support' && (
+            <div id="view-dashboard-support" className="space-y-6">
               
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-white">Interactive Helpdesk</h2>
-                  <p className="text-xs text-neutral-400 mt-0.5">Report orders flaws, query custom configurations, or request payment trace verification.</p>
+                  <h2 className="text-lg font-semibold text-white">Direct WhatsApp Support</h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">Need help with an order? Contact us directly on WhatsApp for instant assistance.</p>
                 </div>
-                <button
-                  onClick={() => setActiveTicketId(null)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-white/10 hover:bg-white/5 transition-all text-white"
-                >
-                  Create New Inquiries Ticket
-                </button>
               </div>
 
-              {ticketNotification && (
-                <div id="ticket-notification-toast" className="p-4 rounded-lg bg-neutral-900 border border-white/20 text-white text-xs flex items-start gap-2.5">
-                  <CheckCircle2 className="w-4 h-4 text-white mt-0.5 shrink-0" />
-                  <div>{ticketNotification}</div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                
-                {/* Left Side: Ticket list */}
-                <div className="lg:col-span-4 space-y-3">
-                  <div className="text-xs font-semibold uppercase text-neutral-400 font-mono tracking-wider">Your Active Tickets</div>
+              <div className="max-w-xl mx-auto py-12">
+                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-neutral-900 to-black p-8 text-center space-y-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-[50px] -mr-10 -mt-10"></div>
                   
-                  <div className="space-y-2">
-                    {tickets.length > 0 ? (
-                      tickets.map((t) => (
-                        <button
-                          key={t.id}
-                          id={`ticket-item-${t.id}`}
-                          onClick={() => setActiveTicketId(t.id)}
-                          className={`w-full p-4 rounded-xl text-left border transition-all ${
-                            activeTicketId === t.id
-                              ? 'bg-white/[0.05] border-white/20'
-                              : 'bg-white/[0.01] border-white/5 hover:border-white/15'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between text-[10px] mb-1.5 font-mono">
-                            <span className="text-neutral-400 font-medium">{t.id}</span>
-                            <span className={`px-1.5 py-0.5 rounded ${
-                              t.status === 'Answered'
-                                ? 'bg-white text-black font-bold uppercase'
-                                : t.status === 'Closed'
-                                ? 'bg-neutral-800 text-neutral-500'
-                                : 'bg-black text-neutral-300 animate-pulse'
-                            }`}>
-                              {t.status}
-                            </span>
-                          </div>
-                          
-                          <h4 className="text-xs font-semibold text-white tracking-tight truncate">{t.subject}</h4>
-                          <p className="text-[11px] text-neutral-400 line-clamp-1 mt-1">{t.message}</p>
-                          <div className="text-[10px] text-neutral-500 mt-2 font-mono">
-                            {new Date(t.createdAt).toLocaleDateString()}
-                          </div>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-neutral-600 font-mono text-xs">
-                        No support tickets opened.
-                      </div>
-                    )}
+                  <div className="w-20 h-20 bg-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/30">
+                    <svg className="w-10 h-10 text-emerald-400" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.72.94 3.659 1.437 5.63 1.438h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                    </svg>
                   </div>
+                  
+                  <div>
+                    <h3 className="text-xl font-bold text-white uppercase tracking-wider font-mono">Live Support Hub</h3>
+                    <p className="text-sm text-neutral-400 mt-2 leading-relaxed">
+                      Our interactive ticketing system has been deprecated in favor of faster, real-time communication.
+                    </p>
+                  </div>
+
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-xs text-neutral-300 font-mono">
+                    <p>⏰ Average Response Time: &lt; 5 Minutes</p>
+                    <p>🌍 Support Coverage: 24/7 Global</p>
+                  </div>
+
+                  <a
+                    href="https://wa.me/918168285559"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase tracking-widest text-sm transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+                  >
+                    Message on WhatsApp
+                  </a>
+                  
+                  <p className="text-[10px] text-neutral-500 uppercase font-mono tracking-widest">
+                    Authorized SMM Support Channel
+                  </p>
                 </div>
-
-                {/* Right Side: Active Ticket Conversation OR Creation form */}
-                <div className="lg:col-span-8">
-                  {activeTicketId ? (
-                    // Conversation View
-                    (() => {
-                      const activeTicket = tickets.find(t => t.id === activeTicketId);
-                      if (!activeTicket) return null;
-                      
-                      return (
-                        <div className="rounded-xl border border-white/10 bg-white/[0.01] overflow-hidden flex flex-col">
-                          
-                          {/* Ticket header */}
-                          <div className="p-4 bg-white/[0.02] border-b border-white/[0.06] flex justify-between items-center">
-                            <div>
-                              <div className="text-[10px] font-mono text-neutral-400">CONVERSATION ON: {activeTicket.id}</div>
-                              <h3 className="text-xs font-semibold text-white tracking-tight">{activeTicket.subject}</h3>
-                            </div>
-                            
-                            <button
-                              onClick={() => {
-                                const idx = tickets.findIndex(t => t.id === activeTicket.id);
-                                if (idx > -1) {
-                                  const updated = [...tickets];
-                                  updated[idx].status = 'Closed';
-                                  saveTicketsToStorage(updated);
-                                }
-                              }}
-                              className="px-2.5 py-1 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white transition-colors text-[10px]"
-                            >
-                              Close Ticket
-                            </button>
-                          </div>
-
-                          {/* Chat Box */}
-                          <div className="p-4 space-y-4 max-h-[300px] overflow-y-auto">
-                            
-                            {/* User main message */}
-                            <div className="flex flex-col items-end">
-                              <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-3 max-w-[85%] text-xs text-white">
-                                {activeTicket.message}
-                              </div>
-                              <span className="text-[9px] text-neutral-500 mt-1 font-mono">
-                                User • {new Date(activeTicket.createdAt).toLocaleTimeString()}
-                              </span>
-                            </div>
-
-                            {/* Replies */}
-                            {activeTicket.replies.map((reply) => {
-                              const isSupport = reply.sender === 'support';
-                              return (
-                                <div key={reply.id} className={`flex flex-col ${isSupport ? 'items-start' : 'items-end'}`}>
-                                  <div className={`rounded-lg p-3 max-w-[85%] text-xs leading-normal ${
-                                    isSupport
-                                      ? 'bg-white text-black font-medium text-[11px]'
-                                      : 'bg-neutral-900 border border-neutral-800 text-white'
-                                  }`}>
-                                    {reply.message}
-                                  </div>
-                                  <span className="text-[9px] text-neutral-500 mt-1 font-mono">
-                                    {isSupport ? 'Support Counselor' : 'User'} • {new Date(reply.createdAt).toLocaleTimeString()}
-                                  </span>
-                                </div>
-                              );
-                            })}
-
-                          </div>
-
-                          {/* Reply input bar */}
-                          {activeTicket.status !== 'Closed' ? (
-                            <form onSubmit={handleReplyTicket} className="p-3 bg-white/[0.01] border-t border-white/[0.06] flex gap-2">
-                              <input
-                                id="ticket-reply-msg-input"
-                                type="text"
-                                required
-                                value={ticketReplyMsg}
-                                onChange={(e) => setTicketReplyMsg(e.target.value)}
-                                placeholder="Write your message here..."
-                                className="flex-1 px-3 py-1.5 text-xs text-white rounded-lg glass-input"
-                              />
-                              <button
-                                type="submit"
-                                className="px-3 py-1.5 bg-white text-black font-semibold text-xs rounded-lg hover:bg-neutral-200 transition-colors flex items-center"
-                              >
-                                <Send className="w-3.5 h-3.5" />
-                              </button>
-                            </form>
-                          ) : (
-                            <div className="p-4 text-center text-[10px] text-neutral-500 bg-neutral-950 font-mono">
-                              This inquiry conversation thread is closed. Create another ticket if needed.
-                            </div>
-                          )}
-
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    // Create Form View
-                    <div className="rounded-xl border border-white/5 bg-white/[0.01] p-6 space-y-4">
-                      <h3 className="text-xs font-semibold text-white tracking-tight uppercase font-mono tracking-wider">
-                        Open Supplementary Support Request
-                      </h3>
-
-                      <form id="create-support-ticket-form" onSubmit={handleCreateTicket} className="space-y-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase font-mono tracking-wider">
-                            Subject
-                          </label>
-                          <input
-                            id="ticket-subject-input"
-                            type="text"
-                            required
-                            placeholder="e.g. Question about order ORD-1234"
-                            value={ticketSubject}
-                            onChange={(e) => setTicketSubject(e.target.value)}
-                            className="w-full px-3 py-2 text-xs text-white rounded-lg glass-input"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase font-mono tracking-wider">
-                            Message
-                          </label>
-                          <textarea
-                            id="ticket-msg-textarea"
-                            required
-                            rows={4}
-                            placeholder="Enter details about your question, order link, and what you need help with..."
-                            value={ticketMsg}
-                            onChange={(e) => setTicketMsg(e.target.value)}
-                            className="w-full px-3 py-2 text-xs text-white rounded-lg glass-input resize-none"
-                          ></textarea>
-                          <p className="text-[10px] text-neutral-500 mt-1">
-                            Our support team reviews tickets and replies usually within a few minutes.
-                          </p>
-                        </div>
-
-                        <button
-                          id="submit-ticket-form-btn"
-                          type="submit"
-                          className="px-5 py-2.5 bg-white text-black font-semibold text-xs rounded-lg hover:bg-neutral-200 cursor-pointer shadow-lg uppercase"
-                        >
-                          Submit Ticket
-                        </button>
-                      </form>
-                    </div>
-                  )}
-                </div>
-
               </div>
+
             </div>
           )}
 
@@ -2270,136 +1957,6 @@ export default function Dashboard({
                   </div>
                 </div>
 
-                {/* Developer API Code */}
-                <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold text-white uppercase font-mono tracking-wider">Your API Key</h3>
-                    <button
-                      onClick={() => handleCopy(apiKey, 'api')}
-                      className="px-2.5 py-1 text-[10px] font-bold font-mono uppercase bg-white text-black rounded hover:bg-neutral-200 transition-colors"
-                    >
-                      Copy Key
-                    </button>
-                  </div>
-                  <div className="p-3 bg-black border border-white/5 rounded-lg font-mono text-[11px] text-center text-neutral-400 select-all truncate">
-                    {apiKey}
-                  </div>
-                  <p className="text-[10px] text-neutral-500 font-sans leading-normal">
-                    Use this API Key to integrate programmatically with our services.
-                  </p>
-                </div>
-
-              </div>
-
-              {/* DATABASE SQL SETUP COVENANT */}
-              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-6 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-white/[0.06]">
-                  <div>
-                    <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider flex items-center gap-1.5">
-                      <Layers className="w-4 h-4" />
-                      SQL Database Setup Script
-                    </h3>
-                    <p className="text-[10px] text-neutral-400 mt-1 leading-normal">
-                      Copy and paste this SQL script into your Supabase or any standard PostgreSQL query editor to create the necessary tables for this app.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const sql = `-- Supabase SMM Database Shema Migrations
-CREATE TABLE IF NOT EXISTS public.profiles (
-  email TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  balance NUMERIC DEFAULT 10000.00 NOT NULL,
-  api_key TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.orders (
-  id TEXT PRIMARY KEY,
-  user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
-  service_id TEXT NOT NULL,
-  service_name TEXT NOT NULL,
-  category TEXT NOT NULL,
-  target_url TEXT NOT NULL,
-  quantity INTEGER NOT NULL,
-  charge NUMERIC NOT NULL,
-  status TEXT DEFAULT 'Pending' NOT NULL,
-  provider_order_id TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.tickets (
-  id TEXT PRIMARY KEY,
-  user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
-  subject TEXT NOT NULL,
-  message TEXT NOT NULL,
-  status TEXT DEFAULT 'Open' NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.ticket_replies (
-  id TEXT PRIMARY KEY,
-  ticket_id TEXT REFERENCES public.tickets(id) ON DELETE CASCADE,
-  user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
-  message TEXT NOT NULL,
-  is_support BOOLEAN DEFAULT false NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.transactions (
-  id TEXT PRIMARY KEY,
-  user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
-  amount NUMERIC NOT NULL,
-  method TEXT NOT NULL,
-  status TEXT DEFAULT 'Success' NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);`;
-                      navigator.clipboard.writeText(sql);
-                      setProfileNotice("Supabase Schema setup copied to system clipboard!");
-                      setTimeout(() => setProfileNotice(""), 4000);
-                    }}
-                    className="px-3.5 py-1.5 rounded-lg text-xs font-bold font-mono tracking-tight bg-white text-black hover:bg-neutral-200 transition-all uppercase shrink-0"
-                  >
-                    Copy SQL Script
-                  </button>
-                </div>
-
-                {/* SQL Code Preview Block */}
-                <div className="p-4 bg-black border border-white/5 rounded-lg overflow-x-auto text-[11px] font-mono text-neutral-400 select-all leading-relaxed">
-                  <pre>{`-- 1. Profiles Table
-CREATE TABLE IF NOT EXISTS public.profiles (
-  email TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  balance NUMERIC DEFAULT 10000.00 NOT NULL,
-  api_key TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 2. SMM Orders Table (Added provider_order_id for real-time synchronization)
-CREATE TABLE IF NOT EXISTS public.orders (
-  id TEXT PRIMARY KEY,
-  user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
-  service_id TEXT NOT NULL,
-  service_name TEXT NOT NULL,
-  category TEXT NOT NULL,
-  target_url TEXT NOT NULL,
-  quantity INTEGER NOT NULL,
-  charge NUMERIC NOT NULL,
-  status TEXT DEFAULT 'Pending' NOT NULL,
-  provider_order_id TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 3. Support Tickets Table
-CREATE TABLE IF NOT EXISTS public.tickets (
-  id TEXT PRIMARY KEY,
-  user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
-  subject TEXT NOT NULL,
-  message TEXT NOT NULL,
-  status TEXT DEFAULT 'Open' NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);`}</pre>
-                </div>
               </div>
 
             </div>
@@ -2420,7 +1977,7 @@ CREATE TABLE IF NOT EXISTS public.tickets (
                     Administrative Command Center
                   </h1>
                   <p className="text-xs text-neutral-400 mt-1 max-w-2xl leading-normal">
-                    Authorized console for SMM operations. Dynamically handle live catalogs, profit bounds, add-funds discounts, order sequences, and profiles.
+                    Authorized console for Social Up Hub operations. Dynamically handle live catalogs, profit bounds, add-funds discounts, order sequences, and profiles.
                   </p>
                 </div>
               </div>
@@ -2850,10 +2407,10 @@ CREATE TABLE IF NOT EXISTS public.tickets (
                                   <tr key={ord.id || idx} className="hover:bg-white/[0.02]">
                                     <td className="py-3 font-bold text-white">{ord.id}</td>
                                     <td className="py-3 font-bold select-all text-neutral-400">
-                                      {ord.provider_order_id || ord.providerOrderId || 'Local Mock'}
+                                      {ord.provider_order_id || ord.providerOrderId || 'Processing...'}
                                     </td>
                                     <td className="py-3 text-neutral-400 truncate max-w-[120px]">{ord.user_email || ord.userEmail}</td>
-                                    <td className="py-3 text-neutral-400 truncate max-w-[160px]">{ord.service_name || ord.serviceName}</td>
+                                    <td className="py-3 text-neutral-400 truncate max-w-[160px]">{ord.service_name || ord.serviceName || `Service #${ord.service_id || ord.serviceId || '?'}`}</td>
                                     <td className="py-3 font-semibold text-neutral-400 select-all truncate max-w-[140px] underline hover:text-white">
                                       <a href={ord.target_url || ord.targetUrl} target="_blank" rel="noreferrer">
                                         {ord.target_url || ord.targetUrl}
@@ -2921,13 +2478,13 @@ CREATE TABLE IF NOT EXISTS public.tickets (
                 </button>
 
                 <button
-                  onClick={() => setActiveTab('tickets')}
+                  onClick={() => setActiveTab('support')}
                   className="p-5 rounded-2xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-left transition-all space-y-3 flex flex-col justify-between"
                 >
-                  <Ticket className="w-6 h-6 text-neutral-400" />
+                  <MessageSquare className="w-6 h-6 text-neutral-400" />
                   <div>
-                    <h3 className="text-xs font-semibold text-white font-mono uppercase tracking-wider">Support</h3>
-                    <p className="text-[10px] text-neutral-400 mt-1 leading-normal">Contact customer support for help.</p>
+                    <h3 className="text-xs font-semibold text-white font-mono uppercase tracking-wider">WhatsApp</h3>
+                    <p className="text-[10px] text-neutral-400 mt-1 leading-normal">Contact our support team directly.</p>
                   </div>
                 </button>
 

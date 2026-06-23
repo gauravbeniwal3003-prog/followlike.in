@@ -114,22 +114,6 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess, userEmail =
                 <CornerDownRight className="w-4 h-4 ml-2 text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
 
-              {/* Account 2: Demo Account */}
-              <button
-                id="select-account-btn-demo"
-                onClick={() => handleSelectAccount('demo.user@gmail.com', 'Demo User')}
-                className="flex items-center w-full p-3 text-left transition-all rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.08] hover:border-white/20 group"
-              >
-                <div className="flex items-center justify-center w-10 h-10 bg-neutral-800 rounded-full border border-white/10 text-neutral-300">
-                  DU
-                </div>
-                <div className="ml-3 overflow-hidden flex-1">
-                  <div className="text-sm font-medium text-white">Demo User</div>
-                  <div className="text-xs text-neutral-400 truncate">demo.user@gmail.com</div>
-                </div>
-                <CornerDownRight className="w-4 h-4 ml-2 text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-
               {/* Button to use another account */}
               <button
                 id="use-another-account-btn"
@@ -137,7 +121,7 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess, userEmail =
                 className="flex items-center justify-center w-full py-2.5 text-xs font-medium text-neutral-300 hover:text-white transition-colors border border-dashed border-white/10 rounded-lg hover:border-white/20 hover:bg-white/[0.02]"
               >
                 <User className="w-3.5 h-3.5 mr-2" />
-                Use another Gmail account
+                Sign in with another Gmail account
               </button>
 
               <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 text-[11px] text-neutral-500">

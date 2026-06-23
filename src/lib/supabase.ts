@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { SMMOrder, SupportTicket, TicketReply, UserSession, Transaction } from '../types';
+import { SMMOrder, UserSession, Transaction } from '../types';
 
 const SUPABASE_URL = 'https://mfrnehshclymmydtykpa.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mcm5laHNoY2x5bW15ZHR5a3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzQyNjUsImV4cCI6MjA5NzcxMDI2NX0.dhdfx9xURndzS6MSSsZmH5HI0O59VAY8Vfl7UZt4yxM';
@@ -28,8 +28,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
  *   id TEXT PRIMARY KEY,
  *   user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
  *   service_id TEXT NOT NULL,
- *   service_name TEXT NOT NULL,
- *   category TEXT NOT NULL,
  *   target_url TEXT NOT NULL,
  *   quantity INTEGER NOT NULL,
  *   charge NUMERIC NOT NULL,
@@ -38,28 +36,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
  * );
  * ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
  * 
- * -- 3. Support Tickets Table
- * CREATE TABLE IF NOT EXISTS public.tickets (
- *   id TEXT PRIMARY KEY,
- *   user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
- *   subject TEXT NOT NULL,
- *   message TEXT NOT NULL,
- *   status TEXT DEFAULT 'Open' NOT NULL,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
- * );
- * ALTER TABLE public.tickets DISABLE ROW LEVEL SECURITY;
- * 
- * -- 4. Ticket Replies Table
- * CREATE TABLE IF NOT EXISTS public.ticket_replies (
- *   id TEXT PRIMARY KEY,
- *   ticket_id TEXT REFERENCES public.tickets(id) ON DELETE CASCADE,
- *   sender TEXT NOT NULL CHECK (sender IN ('user', 'support')),
- *   message TEXT NOT NULL,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
- * );
- * ALTER TABLE public.ticket_replies DISABLE ROW LEVEL SECURITY;
- * 
- * -- 5. Transactions Table (Add Funds log)
+ * -- 3. Transactions Table (Add Funds log)
  * CREATE TABLE IF NOT EXISTS public.transactions (
  *   id TEXT PRIMARY KEY,
  *   user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
@@ -89,8 +66,6 @@ CREATE TABLE IF NOT EXISTS public.orders (
   id TEXT PRIMARY KEY,
   user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
   service_id TEXT NOT NULL,
-  service_name TEXT NOT NULL,
-  category TEXT NOT NULL,
   target_url TEXT NOT NULL,
   quantity INTEGER NOT NULL,
   charge NUMERIC NOT NULL,
@@ -100,28 +75,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
 );
 ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
 
--- 3. Support Tickets Table
-CREATE TABLE IF NOT EXISTS public.tickets (
-  id TEXT PRIMARY KEY,
-  user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
-  subject TEXT NOT NULL,
-  message TEXT NOT NULL,
-  status TEXT DEFAULT 'Open' NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-ALTER TABLE public.tickets DISABLE ROW LEVEL SECURITY;
-
--- 4. Ticket Replies Table
-CREATE TABLE IF NOT EXISTS public.ticket_replies (
-  id TEXT PRIMARY KEY,
-  ticket_id TEXT REFERENCES public.tickets(id) ON DELETE CASCADE,
-  sender TEXT NOT NULL CHECK (sender IN ('user', 'support')),
-  message TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-ALTER TABLE public.ticket_replies DISABLE ROW LEVEL SECURITY;
-
--- 5. Transactions Table
+-- 3. Transactions Table
 CREATE TABLE IF NOT EXISTS public.transactions (
   id TEXT PRIMARY KEY,
   user_email TEXT REFERENCES public.profiles(email) ON DELETE CASCADE,
@@ -132,7 +86,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 );
 ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 
--- 6. Coupons Table (New)
+-- 4. Coupons Table (New)
 CREATE TABLE IF NOT EXISTS public.coupons (
   code TEXT PRIMARY KEY,
   discount_percent NUMERIC NOT NULL,
@@ -143,7 +97,7 @@ CREATE TABLE IF NOT EXISTS public.coupons (
 );
 ALTER TABLE public.coupons DISABLE ROW LEVEL SECURITY;
 
--- 7. Global Settings Table (New)
+-- 5. Global Settings Table (New)
 CREATE TABLE IF NOT EXISTS public.global_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -261,8 +215,8 @@ export async function getDbOrders(email: string): Promise<SMMOrder[]> {
     return (data || []).map(row => ({
       id: row.id,
       serviceId: row.service_id,
-      serviceName: row.service_name,
-      category: row.category,
+      serviceName: row.service_name || 'SMM Service',
+      category: row.category || 'General',
       targetUrl: row.target_url,
       quantity: row.quantity,
       charge: parseFloat(row.charge),
@@ -285,8 +239,6 @@ export async function createDbOrder(email: string, order: SMMOrder): Promise<boo
         id: order.id,
         user_email: email,
         service_id: order.serviceId,
-        service_name: order.serviceName,
-        category: order.category,
         target_url: order.targetUrl,
         quantity: order.quantity,
         charge: order.charge,
@@ -302,127 +254,6 @@ export async function createDbOrder(email: string, order: SMMOrder): Promise<boo
     return true;
   } catch (err) {
     console.error(err);
-    return false;
-  }
-}
-
-// Helper: Fetch tickets and replies
-export async function getDbTickets(email: string): Promise<SupportTicket[]> {
-  try {
-    const { data: ticketsData, error: ticketsError } = await supabase
-      .from('tickets')
-      .select('*')
-      .eq('user_email', email)
-      .order('created_at', { ascending: false });
-
-    if (ticketsError) {
-      console.error('Fetch tickets error:', ticketsError);
-      return [];
-    }
-
-    if (!ticketsData || ticketsData.length === 0) return [];
-
-    // Fetch replies for these tickets
-    const ticketIds = ticketsData.map(t => t.id);
-    const { data: repliesData, error: repliesError } = await supabase
-      .from('ticket_replies')
-      .select('*')
-      .in('ticket_id', ticketIds)
-      .order('created_at', { ascending: true });
-
-    if (repliesError) {
-      console.error('Fetch ticket replies error:', repliesError);
-    }
-
-    const repliesMap: Record<string, TicketReply[]> = {};
-    (repliesData || []).forEach(row => {
-      if (!repliesMap[row.ticket_id]) {
-        repliesMap[row.ticket_id] = [];
-      }
-      repliesMap[row.ticket_id].push({
-        id: row.id,
-        sender: row.sender as 'user' | 'support',
-        message: row.message,
-        createdAt: row.created_at
-      });
-    });
-
-    return ticketsData.map(t => ({
-      id: t.id,
-      subject: t.subject,
-      message: t.message,
-      status: t.status as any,
-      replies: repliesMap[t.id] || [],
-      createdAt: t.created_at
-    }));
-  } catch (err) {
-    console.error(err);
-    return [];
-  }
-}
-
-// Helper: Setup live support / client ticket insertion
-export async function createDbTicket(email: string, ticket: SupportTicket): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('tickets')
-      .insert({
-        id: ticket.id,
-        user_email: email,
-        subject: ticket.subject,
-        message: ticket.message,
-        status: ticket.status,
-        created_at: ticket.createdAt
-      });
-
-    if (error) {
-      console.error('Supabase insert ticket error:', error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error(err);
-    return false;
-  }
-}
-
-// Helper: Add ticket reply
-export async function createDbTicketReply(ticketId: string, reply: TicketReply): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('ticket_replies')
-      .insert({
-        id: reply.id,
-        ticket_id: ticketId,
-        sender: reply.sender,
-        message: reply.message,
-        created_at: reply.createdAt
-      });
-
-    if (error) {
-      console.error('Supabase ticket reply insert error:', error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error(err);
-    return false;
-  }
-}
-
-// Helper: Update Ticket Status
-export async function updateDbTicketStatus(ticketId: string, status: 'Open' | 'Closed' | 'Answered'): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('tickets')
-      .update({ status })
-      .eq('id', ticketId);
-    if (error) {
-      console.error(error);
-      return false;
-    }
-    return true;
-  } catch (err) {
     return false;
   }
 }

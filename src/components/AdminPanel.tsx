@@ -30,6 +30,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
   const [serviceOverrides, setServiceOverrides] = useState<Record<string, any>>({});
   const [adminServices, setAdminServices] = useState<any[]>([]);
   const [adminCategories, setAdminCategories] = useState<any[]>([]);
+  const [providerBalance, setProviderBalance] = useState<{ balance: string; currency: string } | null>(null);
   const [allServices, setAllServices] = useState<SMMService[]>([]);
 
   useEffect(() => {
@@ -44,7 +45,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
     e.preventDefault();
     setAuthError('');
     try {
-      const res = await fetch('https://followlike-in.onrender.com/api/smm/admin/login', {
+      const res = await fetch('/api/smm/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: authUsername, password: authPassword })
@@ -74,23 +75,25 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
     fetchTransactions();
     fetchCategories();
     fetchServices();
+    fetchProviderBalance();
     
     // Also fetch the standard services list to have the catalog
-    fetch('https://followlike-in.onrender.com/api/smm/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }})
+    fetch('/api/smm/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }})
       .then(r => r.json())
       .then(d => { if (d.success) setAllServices(d.services || []) });
   }, [isAdminAuthenticated]);
 
-  const fetchDashboard = () => fetch('https://followlike-in.onrender.com/api/smm/admin/dashboard').then(r => r.json()).then(d => { if (d.success) setDashboardStats(d.stats) });
-  const fetchUsers = () => fetch('https://followlike-in.onrender.com/api/smm/admin/users').then(r => r.json()).then(d => { if (d.success) setUsers(d.users) });
-  const fetchTransactions = () => fetch('https://followlike-in.onrender.com/api/smm/admin/transactions').then(r => r.json()).then(d => { if(d.success) setTransactions(d.transactions || []) });
-  const fetchCategories = () => fetch('https://followlike-in.onrender.com/api/smm/admin/categories').then(r => r.json()).then(d => { 
+  const fetchDashboard = () => fetch('/api/smm/admin/dashboard').then(r => r.json()).then(d => { if (d.success) setDashboardStats(d.stats) });
+  const fetchUsers = () => fetch('/api/smm/admin/users').then(r => r.json()).then(d => { if (d.success) setUsers(d.users) });
+  const fetchTransactions = () => fetch('/api/smm/admin/transactions').then(r => r.json()).then(d => { if(d.success) setTransactions(d.transactions || []) });
+  const fetchProviderBalance = () => fetch('/api/smm/admin/provider-balance').then(r => r.json()).then(d => { if(d.success) setProviderBalance({ balance: d.balance, currency: d.currency }) });
+  const fetchCategories = () => fetch('/api/smm/admin/categories').then(r => r.json()).then(d => { 
     if(d.success) {
       setCategoryOverrides(d.categoryOverrides || {});
       setAdminCategories(d.categories || []);
     }
   });
-  const fetchServices = () => fetch('https://followlike-in.onrender.com/api/smm/admin/services').then(r => r.json()).then(d => { 
+  const fetchServices = () => fetch('/api/smm/admin/services').then(r => r.json()).then(d => { 
     if(d.success) {
       setServiceOverrides(d.serviceOverrides || {});
       setAdminServices(d.services || []);
@@ -214,7 +217,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
           <button 
             onClick={() => {
               if (confirm('Regular sync will update all active services from the provider. Continue?')) {
-                fetch('https://followlike-in.onrender.com/api/smm/admin/services/sync', { method: 'POST' })
+                fetch('/api/smm/admin/services/sync', { method: 'POST' })
                   .then(r => r.json())
                   .then(d => { alert('Sync Complete'); fetchDashboard(); fetchServices(); fetchCategories(); })
                   .catch(e => alert('Sync failed'));
@@ -227,7 +230,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
           <button 
             onClick={() => {
               if (confirm('WARNING: Force sync will delete all categories and services and re-fetch them from scratch. Proceed?')) {
-                fetch('https://followlike-in.onrender.com/api/smm/admin/services/sync', { 
+                fetch('/api/smm/admin/services/sync', { 
                   method: 'POST', 
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ force_reset: true })
@@ -250,7 +253,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
           { label: 'Total Orders', value: dashboardStats.totalOrders || 0 },
           { label: 'Total Revenue', value: `₹${(dashboardStats.totalRevenue || 0).toLocaleString('en-IN')}` },
           { label: 'Transactions', value: dashboardStats.totalTransactions || 0 },
-          { label: 'Provider Balance', value: `₹${parseFloat(dashboardStats.providerBalance || '0').toLocaleString('en-IN')}` },
+          { label: 'Provider Balance', value: `₹${parseFloat(providerBalance?.balance || '0').toLocaleString('en-IN')}` },
           { label: 'Referral Payouts', value: `₹${dashboardStats.referralPayouts || 0}` },
           { label: 'Pending Recharges', value: dashboardStats.pendingRecharges || 0 },
         ].map((stat, i) => (
@@ -311,7 +314,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                       onClick={() => {
                         const newBal = prompt('Enter new balance:', u.balance.toString());
                         if (newBal && !isNaN(parseFloat(newBal))) {
-                          fetch('https://followlike-in.onrender.com/api/smm/admin/users/update-balance', {
+                          fetch('/api/smm/admin/users/update-balance', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({ email: u.email, balance: parseFloat(newBal) })
                           }).then(() => fetchUsers());
@@ -323,7 +326,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                     </button>
                     <button 
                       onClick={() => {
-                        fetch('https://followlike-in.onrender.com/api/smm/admin/users/toggle-ban', {
+                        fetch('/api/smm/admin/users/toggle-ban', {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
                           body: JSON.stringify({ email: u.email, is_banned: u.status !== 'banned' })
                         }).then(() => fetchUsers());
@@ -354,7 +357,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
 
   const renderMargin = () => {
     const handleSaveGlobal = () => {
-      fetch('https://followlike-in.onrender.com/api/smm/settings/update', {
+      fetch('/api/smm/settings/update', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ 
           settings: {
@@ -436,27 +439,30 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
               )}
               {adminCategories.map(catItem => {
                 const cat = catItem.name;
-                const conf = categoryOverrides[cat] || {};
+                const isActive = catItem.is_active !== false;
                 return (
                   <tr key={cat} className="hover:bg-white/[0.02]">
-                    <td className="p-4 font-bold text-white">{conf.custom_name || cat}</td>
+                    <td className="p-4 font-bold text-white">{catItem.custom_name || cat}</td>
                     <td className="p-4 text-center">
-                      <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold ${conf.disabled ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                        {conf.disabled ? 'Disabled' : 'Active'}
+                      <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold ${!isActive ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                        {!isActive ? 'Disabled' : 'Active'}
                       </span>
                     </td>
                     <td className="p-4 text-right text-emerald-400">
-                      {conf.margin !== undefined ? `+${conf.margin}%` : 'Use Global'}
+                      {catItem.custom_margin !== null && catItem.custom_margin !== undefined ? `+${catItem.custom_margin}%` : 'Use Global'}
                     </td>
                     <td className="p-4 text-right">
                       <button 
                         onClick={() => {
-                          const n = prompt('Display Name:', conf.custom_name || cat);
-                          const m = prompt('Custom Margin % (leave blank to clear):', conf.margin?.toString() || '');
-                          const newConf = { ...conf, custom_name: n || undefined, margin: m ? parseFloat(m) : undefined };
-                          fetch('https://followlike-in.onrender.com/api/smm/admin/categories/update', {
+                          const n = prompt('Display Name:', catItem.custom_name || cat);
+                          const m = prompt('Custom Margin % (leave blank to clear):', catItem.custom_margin?.toString() || '');
+                          fetch('/api/smm/admin/categories/update', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ category: cat, override: newConf })
+                            body: JSON.stringify({ 
+                              name: cat, 
+                              custom_name: n || null, 
+                              custom_margin: m ? parseFloat(m) : null 
+                            })
                           }).then(() => fetchCategories());
                         }}
                         className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded mr-2 border border-white/10 text-neutral-400 hover:text-white transition-all text-[10px]"
@@ -465,15 +471,14 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                       </button>
                       <button 
                         onClick={() => {
-                          const newConf = { ...conf, disabled: !conf.disabled };
-                          fetch('https://followlike-in.onrender.com/api/smm/admin/categories/update', {
+                          fetch('/api/smm/admin/categories/update', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ category: cat, override: newConf })
+                            body: JSON.stringify({ name: cat, is_active: !isActive })
                           }).then(() => fetchCategories());
                         }}
                         className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-neutral-400 hover:text-white transition-all text-[10px]"
                       >
-                        {conf.disabled ? 'Enable' : 'Disable'}
+                        {isActive ? 'Disable' : 'Enable'}
                       </button>
                     </td>
                   </tr>
@@ -505,38 +510,37 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                  <td colSpan={5} className="p-8 text-center text-neutral-500">No services found in database.</td>
                </tr>
             )}
-            {adminServices.slice(0, 100).map(srv => {
-              const conf = serviceOverrides[srv.service_id.toString()] || {};
+            {adminServices.slice(0, 500).map(srv => {
+              const isActive = srv.is_active !== false;
               return (
                 <tr key={srv.service_id} className="hover:bg-white/[0.02]">
                   <td className="p-4 font-bold text-neutral-500">{srv.service_id}</td>
                   <td className="p-4">
-                    <div className="font-bold text-white max-w-sm truncate">{conf.name || srv.api_name}</div>
-                    <div className="text-[10px] text-neutral-500 max-w-sm truncate">{conf.description || srv.category_name}</div>
+                    <div className="font-bold text-white max-w-sm truncate">{srv.custom_name || srv.api_name}</div>
+                    <div className="text-[10px] text-neutral-500 max-w-sm truncate">{srv.custom_description || srv.category_name}</div>
                   </td>
                   <td className="p-4 text-center">
-                    <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold ${conf.disabled ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                      {conf.disabled ? 'Disabled' : 'Active'}
+                    <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold ${!isActive ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                      {!isActive ? 'Disabled' : 'Active'}
                     </span>
                   </td>
                   <td className="p-4 text-right text-emerald-400">
-                    {conf.margin !== undefined ? `+${conf.margin}%` : 'Inherited'}
+                    {srv.custom_margin !== null && srv.custom_margin !== undefined ? `+${srv.custom_margin}%` : 'Inherited'}
                   </td>
                   <td className="p-4 text-right flex gap-1 justify-end">
                     <button 
                       onClick={() => {
-                        const n = prompt('Override Name:', conf.name || srv.api_name);
-                        const d = prompt('Override Description:', conf.description || srv.custom_description || '');
-                        const m = prompt('Custom Margin % (leave blank to inherit):', conf.margin?.toString() || '');
-                        const newConf = { 
-                          ...conf, 
-                          name: n || undefined, 
-                          description: d || undefined,
-                          margin: m ? parseFloat(m) : undefined 
-                        };
-                        fetch('https://followlike-in.onrender.com/api/smm/admin/services/update', {
+                        const n = prompt('Override Name:', srv.custom_name || srv.api_name);
+                        const d = prompt('Override Description:', srv.custom_description || '');
+                        const m = prompt('Custom Margin % (leave blank to inherit):', srv.custom_margin?.toString() || '');
+                        fetch('/api/smm/admin/services/update', {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
-                          body: JSON.stringify({ id: srv.service_id.toString(), override: newConf })
+                          body: JSON.stringify({ 
+                            service_id: srv.service_id, 
+                            custom_name: n || null, 
+                            custom_description: d || null,
+                            custom_margin: m ? parseFloat(m) : null 
+                          })
                         }).then(() => fetchServices());
                       }}
                       className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-neutral-400 hover:text-white transition-all"
@@ -545,15 +549,14 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                     </button>
                     <button 
                       onClick={() => {
-                        const newConf = { ...conf, disabled: !conf.disabled };
-                        fetch('https://followlike-in.onrender.com/api/smm/admin/services/update', {
+                        fetch('/api/smm/admin/services/update', {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
-                          body: JSON.stringify({ id: srv.service_id.toString(), override: newConf })
+                          body: JSON.stringify({ service_id: srv.service_id, is_active: !isActive })
                         }).then(() => fetchServices());
                       }}
-                      className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10"
+                      className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-neutral-400 hover:text-white transition-all"
                     >
-                      {conf.disabled ? 'Enable' : 'Disable'}
+                      {isActive ? 'Disable' : 'Enable'}
                     </button>
                   </td>
                 </tr>

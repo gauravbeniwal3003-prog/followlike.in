@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS public.global_settings (
 
 -- Initial Settings
 INSERT INTO public.global_settings (key, value) VALUES ('profit_markup_percent', '15') ON CONFLICT (key) DO NOTHING;
-INSERT INTO public.global_settings (key, value) VALUES ('landing_video_url', 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=0&mute=1&controls=1') ON CONFLICT (key) DO NOTHING;
+INSERT INTO public.global_settings (key, value) VALUES ('landing_video_url', '') ON CONFLICT (key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.coupons (
   id uuid primary key default gen_random_uuid(),
@@ -85,15 +85,4 @@ CREATE TABLE IF NOT EXISTS public.coupons (
   uses integer default 0,
   expires_at timestamp with time zone,
   created_at timestamp with time zone default now()
-);
-
-CREATE TABLE IF NOT EXISTS public.tickets (
-  id uuid primary key default gen_random_uuid(),
-  user_email text not null,
-  subject text not null,
-  message text not null,
-  status text not null default 'Open',
-  reply text,
-  created_at timestamp with time zone default now(),
-  updated_at timestamp with time zone default now()
 );

@@ -35,15 +35,27 @@ export default function LandingPage({
   servicesCatalog,
   userEmail,
   onLoginSuccess,
-  landingVideoUrl = 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=0&mute=1&controls=1'
+  landingVideoUrl = ''
 }: LandingPageProps) {
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [customFaqAnswer, setCustomFaqAnswer] = useState<string | null>(null);
   const [isGmailModalOpen, setIsGmailModalOpen] = useState(false);
 
-  // Extract unique categories
-  const categories = ['All', ...Array.from(new Set(servicesCatalog.map(s => s.category)))];
+  // Extract unique categories with priority
+  const categories = (() => {
+    const rawCats = Array.from(new Set(servicesCatalog.map(s => s.category)));
+    const priority = ['Instagram', 'YouTube', 'Twitter', 'TikTok'];
+    const sorted = [...rawCats].sort((a, b) => {
+      const idxA = priority.findIndex(p => a.toLowerCase().includes(p.toLowerCase()));
+      const idxB = priority.findIndex(p => b.toLowerCase().includes(p.toLowerCase()));
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+    return ['All', ...sorted];
+  })();
 
   // Filter services
   const filteredServices = servicesCatalog.filter(service => {
@@ -83,8 +95,8 @@ export default function LandingPage({
       icon: Shield,
     },
     {
-      title: '24/7 Support Desk',
-      description: 'Open a support ticket inside your dashboard anytime. Our helpful team responds quickly to assist you with your orders.',
+      title: '24/7 WhatsApp Support',
+      description: 'Contact our support team directly via WhatsApp anytime. Our helpful team responds quickly to assist you with your orders.',
       icon: Clock,
     }
   ];
@@ -101,7 +113,7 @@ export default function LandingPage({
           <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
             <span className="text-black font-black text-xs">SMM</span>
           </div>
-          <span className="text-xl font-display font-bold tracking-tighter">NEXUS</span>
+          <span className="text-xl font-display font-bold tracking-tighter uppercase">Social Up Hub</span>
         </div>
         <div className="hidden md:flex gap-8 text-xs uppercase tracking-widest font-semibold text-neutral-400">
           <a href="#catalog" className="hover:text-white transition-colors">Services</a>
@@ -137,7 +149,7 @@ export default function LandingPage({
               <span className="text-neutral-500 font-extrabold">SOCIAL</span> GROWTH.
             </h1>
             <p className="text-neutral-400 text-xs sm:text-sm max-w-lg mt-2 leading-relaxed">
-              Experience SMM Panel's Clean Minimalism edition. Establish high-retention audience delivery channels and organic global user engagement simulations securely.
+              Experience Social Up Hub's Clean Minimalism edition. Establish high-retention audience delivery channels and organic global user engagement simulations securely.
             </p>
           </div>
           
@@ -167,9 +179,9 @@ export default function LandingPage({
         {/* Right 2/5 column: Features & High-contrast Speciality */}
         <div className="w-full lg:w-2/5 flex flex-col gap-4 justify-between">
           
-          {/* Why Choose Nexus Box */}
+          {/* Why Choose Social Up Hub Box */}
           <div className="bg-white/5 p-6 rounded-3xl border border-white/10 backdrop-blur-sm flex-1 flex flex-col justify-center">
-            <h3 className="text-xs font-bold font-mono uppercase tracking-[0.15em] text-white/50 mb-5">Why Choose Nexus?</h3>
+            <h3 className="text-xs font-bold font-mono uppercase tracking-[0.15em] text-white/50 mb-5">Why Choose Social Up Hub?</h3>
             <div className="space-y-4">
               <div className="flex gap-4">
                 <div className="w-6 h-6 flex-shrink-0 bg-white/10 border border-white/10 rounded flex items-center justify-center text-[10px] font-mono">01</div>
@@ -260,10 +272,10 @@ export default function LandingPage({
         <div className="max-w-7xl mx-auto px-6 sm:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             
-            {/* Left side info */}
+            {/* side info */}
             <div className="lg:col-span-5 space-y-4">
               <span className="text-xs font-mono text-neutral-500 tracking-widest uppercase">Verified Benchmark</span>
-              <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-white/95">Why SMM Glass Services Excel?</h2>
+              <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-white/95">Why Social Up Hub Services Excel?</h2>
               <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
                 Ordinary SMM providers rely on archaic bot scrapers that fail platform check updates within 24 hours. Our panel uses simulated premium viewer contexts across secure proxy grids, ensuring absolute safety for customer channels.
               </p>
@@ -271,7 +283,7 @@ export default function LandingPage({
               <div className="space-y-2 pt-2 text-xs">
                 <div className="flex items-start gap-2 text-neutral-300">
                   <CheckCircle2 className="w-4 h-4 text-white mt-0.5 shrink-0" />
-                  <span>Absolute SSL checkout and mock balance ledger.</span>
+                  <span>Absolute SSL checkout and secure balance ledger.</span>
                 </div>
                 <div className="flex items-start gap-2 text-neutral-300">
                   <CheckCircle2 className="w-4 h-4 text-white mt-0.5 shrink-0" />
@@ -342,20 +354,20 @@ export default function LandingPage({
           </div>
 
           <div className="space-y-3">
-            {[
-              {
-                q: 'What is SMM Glass, and are these metrics verified?',
-                a: 'SMM Glass is an advanced social media marketing interface that delivers custom engagement loops (views, follows, subscribers) to accounts. These actions are triggered via premium dedicated developer proxy grids to maintain absolute security.'
-              },
-              {
-                q: 'Can these services lead to page suspension?',
-                a: 'Never. Our special high retention delivery speed algorithm spaces actions naturally so they closely replicate normal organic community traffic.'
-              },
-              {
-                q: 'How does the Google login save my dashboard progress?',
-                a: 'Your session token is generated through secure Google Auth protocol simulation and persistent storage keys. This allows you to close the interface, return subsequently, and retain all mock ledger credits and order statuses perfectly.'
-              }
-            ].map((faq, idx) => (
+          {[
+            {
+              q: 'What is Social Up Hub, and are these metrics verified?',
+              a: 'Social Up Hub is an advanced social media marketing interface that delivers custom engagement loops (views, follows, subscribers) to accounts. These actions are triggered via premium dedicated developer proxy grids to maintain absolute security.'
+            },
+            {
+              q: 'Can these services lead to page suspension?',
+              a: 'Never. Our special high retention delivery speed algorithm spaces actions naturally so they closely replicate normal organic community traffic.'
+            },
+            {
+              q: 'How does the Google login save my progress?',
+              a: 'Your session token is generated through secure Google Auth protocol and persistent storage keys. This allows you to close the interface, return subsequently, and retain all ledger credits and order statuses perfectly.'
+            }
+          ].map((faq, idx) => (
               <div key={idx} className="rounded-lg border border-white/5 bg-black overflow-hidden transition-all duration-200">
                 <button
                   id={`faq-toggle-${idx}`}
@@ -387,7 +399,7 @@ export default function LandingPage({
                 <div className="w-6 h-6 rounded bg-white flex items-center justify-center font-bold text-black text-xs">
                   S
                 </div>
-                <span className="text-base font-semibold tracking-tight">SMM<span className="text-neutral-400 font-light ml-0.5">GLASS</span></span>
+                <span className="text-base font-semibold tracking-tight uppercase">Social Up Hub</span>
               </div>
               <p className="text-neutral-500 leading-relaxed font-sans max-w-sm">
                 Next-generation monochrome social booster application, empowering visual marketing experts since 2026. Handcrafted for maximum throughput.
@@ -405,7 +417,7 @@ export default function LandingPage({
                 Refund Policy
               </h4>
               <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4 text-[11px] leading-relaxed text-neutral-400">
-                <span className="text-white font-semibold">⚠️ STRICT POLICY: NO REFUNDS.</span> All purchases, mock credits, and processed transactions on SMM Glass are absolute, finalized, and completely non-refundable. Once an order propagation is queued to target URLs, the resources cannot be recalled under any situations. Ensure target coordinates and service categories are fully verified before ordering.
+                <span className="text-white font-semibold">⚠️ STRICT POLICY: NO REFUNDS.</span> All purchases, credits, and processed transactions on Social Up Hub are absolute, finalized, and completely non-refundable. Once an order propagation is queued to target URLs, the resources cannot be recalled under any situations. Ensure target coordinates and service categories are fully verified before ordering.
               </div>
             </div>
 
@@ -415,16 +427,16 @@ export default function LandingPage({
               
               <ul className="space-y-2 text-[11px]">
                 <li>
-                  <a href="mailto:support@smmglass.com" className="flex items-center hover:text-white transition-colors group">
+                  <a href="mailto:support@socialuphub.com" className="flex items-center hover:text-white transition-colors group">
                     <Mail className="w-3.5 h-3.5 mr-2 text-neutral-500 group-hover:text-white" />
-                    support@smmglass.com
+                    support@socialuphub.com
                   </a>
                 </li>
                 <li>
-                  <button onClick={() => setIsGmailModalOpen(true)} className="flex items-center hover:text-white transition-colors text-left group">
-                    <HelpCircle className="w-3.5 h-3.5 mr-2 text-neutral-500 group-hover:text-white" />
-                    24/7 Support Ticket Console
-                  </button>
+                  <a href="https://wa.me/918168285559" target="_blank" rel="noopener noreferrer" className="flex items-center hover:text-white transition-colors group">
+                    <MessageSquare className="w-3.5 h-3.5 mr-2 text-neutral-500 group-hover:text-white" />
+                    24/7 WhatsApp Support
+                  </a>
                 </li>
               </ul>
 
@@ -453,7 +465,7 @@ export default function LandingPage({
           {/* Bottom Copyright */}
           <div className="pt-8 border-t border-white/[0.05] flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-neutral-500">
             <div>
-              © 2026 SMM Glass Panel Corporation. All rights reserved.
+              © 2026 Social Up Hub Panel Corporation. All rights reserved.
             </div>
             <div className="flex space-x-4">
               <span className="hover:text-white cursor-pointer" onClick={() => setIsGmailModalOpen(true)}>Terms of Service</span>

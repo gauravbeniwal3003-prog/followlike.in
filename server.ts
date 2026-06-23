@@ -4,27 +4,17 @@ import { createServer as createViteServer } from 'vite';
 import { createClient } from '@supabase/supabase-js';
 
 // Base SMM Configuration
-const SMM_API_KEY = '4f875a1ab9fc4c8ca31cb98a6e82e98c';
+const SMM_API_KEY = process.env.SMM_API_KEY || '4f875a1ab9fc4c8ca31cb98a6e82e98c';
 const SMM_API_URL = 'https://socialuphub-backend.onrender.com/api/v2';
 
 const SUPABASE_URL = 'https://mfrnehshclymmydtykpa.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mcm5laHNoY2x5bW15ZHR5a3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzQyNjUsImV4cCI6MjA5NzcxMDI2NX0.dhdfx9xURndzS6MSSsZmH5HI0O59VAY8Vfl7UZt4yxM';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-let PROFIT_MARKUP_PERCENT = 15; // 15% custom profit markup on SMM services
-let LANDING_VIDEO_URL = 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=0&mute=1&controls=1';
+let PROFIT_MARKUP_PERCENT = 15;
+let LANDING_VIDEO_URL = ''; // Removed rickroll demo video
 
-// Advanced Admin Overrides
-let serviceOverridesMemory: Record<string, { margin?: number, name?: string, description?: string, disabled?: boolean }> = {};
-let categoryOverridesMemory: Record<string, { margin?: number, disabled?: boolean }> = {};
-let usersMemory: any[] = [
-  { email: 'gauravbeniwal30003@gmail.com', name: 'Gaurav Beniwal', balance: 10000.00, is_admin: true, status: 'active', created_at: new Date().toISOString() },
-  { email: 'user@example.com', name: 'Demo Client', balance: 450.00, is_admin: false, status: 'active', created_at: new Date().toISOString() }
-];
-let transactionsMemory: any[] = [];
-let rechargesMemory: any[] = [];
-let pendingRechargesMemory: any[] = [];
-let referalPayoutsMemory = 0;
+// Advanced Admin Overrides - DEPRECATED (Now DB Driven)
 
 // Load Config from Supabase on start
 async function loadServerSettings() {
@@ -91,6 +81,35 @@ async function callSmmApi(payload: Record<string, string>) {
 
 // === CATALOG & SERVICES ===
 
+// 5. Cache for services to improve performance
+let servicesCache: any = null;
+let lastCacheUpdate = 0;
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// Start background task every 15 minutes
+setInterval(backgroundSyncPrices, 15 * 60 * 1000);
+
+// Background sync task for prices to keep them realtime
+async function backgroundSyncPrices() {
+  try {
+    console.log('[Background] Syncing prices from API...');
+    const rawServices: any[] = await callSmmApi({ key: SMM_API_KEY, action: 'services' });
+    if (!Array.isArray(rawServices)) return;
+
+    // Use a batch update strategy if possible, but for now simple loop is fine
+    for (const item of rawServices) {
+      await supabase.from('smm_services').update({
+        provider_rate: parseFloat(item.rate)
+      }).eq('service_id', parseInt(item.service));
+    }
+    // Invalidate cache
+    servicesCache = null;
+    console.log('[Background] Price sync completed.');
+  } catch (err) {
+    console.error('[Background] Price sync failed:', err);
+  }
+}
+
 app.post('/api/smm/admin/services/sync', async (req, res) => {
   try {
     const { force_reset } = req.body || {};
@@ -99,14 +118,15 @@ app.post('/api/smm/admin/services/sync', async (req, res) => {
 
     if (force_reset) {
       console.log('Force resetting categories and services...');
-      await supabase.from('smm_services').delete().neq('service_id', 0); // Delete all
-      await supabase.from('smm_categories').delete().neq('name', ''); // Delete all
+      await supabase.from('smm_services').delete().neq('service_id', 0);
+      await supabase.from('smm_categories').delete().neq('name', '');
     }
 
     console.log('Syncing categories to DB...');
     const uniqueCategories = [...new Set(rawServices.map(s => s.category || 'Other'))];
-    for (const c of uniqueCategories) {
-      await supabase.from('smm_categories').upsert({ name: c }, { onConflict: 'name', ignoreDuplicates: true });
+    for (let i = 0; i < uniqueCategories.length; i++) {
+      const c = uniqueCategories[i];
+      await supabase.from('smm_categories').upsert({ name: c, sort_order: i }, { onConflict: 'name' });
     }
 
     console.log(`Syncing ${rawServices.length} services to DB...`);
@@ -114,7 +134,8 @@ app.post('/api/smm/admin/services/sync', async (req, res) => {
        await supabase.from('smm_services').update({ is_active: false }).neq('service_id', 0);
     }
     
-    for (const item of rawServices) {
+    for (let i = 0; i < rawServices.length; i++) {
+      const item = rawServices[i];
       await supabase.from('smm_services').upsert({
         service_id: parseInt(item.service),
         category_name: item.category || 'Other',
@@ -124,11 +145,15 @@ app.post('/api/smm/admin/services/sync', async (req, res) => {
         max_order: parseInt(item.max),
         type: item.type || 'Default',
         refill: !!item.refill,
-        is_active: true
+        is_active: true,
+        sort_order: i // Preserving API order
       }, { onConflict: 'service_id' });
     }
 
-    const balanceRes = await callSmmApi({ key: SMM_API_KEY, action: 'balance' }).catch(() => ({ balance: 0, currency: 'USD' }));
+    // Invalidate cache
+    servicesCache = null;
+
+    const balanceRes = await callSmmApi({ key: SMM_API_KEY, action: 'balance' }).catch(() => ({ balance: 0, currency: 'INR' }));
 
     res.json({ success: true, count: rawServices.length, balance: balanceRes.balance });
   } catch (err: any) {
@@ -138,34 +163,84 @@ app.post('/api/smm/admin/services/sync', async (req, res) => {
 
 app.post('/api/smm/services', async (req, res) => {
   try {
-    const { data: dbCategories } = await supabase.from('smm_categories').select('*');
-    const { data: dbServices } = await supabase.from('smm_services').select('*').eq('is_active', true);
+    const { force_sync } = req.body || {};
 
-    if (!dbServices || dbServices.length === 0) {
-      // Auto sync if empty
-      console.log('Database empty, performing initial sync...');
+    // Return cached services if available and NOT force syncing
+    if (!force_sync && servicesCache && (Date.now() - lastCacheUpdate < CACHE_TTL)) {
+      return res.json({ success: true, services: servicesCache });
+    }
+
+    if (force_sync) {
+      console.log('Force sync requested, invalidating cache and fetching live...');
+      servicesCache = null;
+    }
+
+    const { data: dbCategories } = await supabase.from('smm_categories').select('*').order('sort_order', { ascending: true });
+    const { data: dbServices } = await supabase.from('smm_services').select('*').eq('is_active', true).order('sort_order', { ascending: true });
+
+    if (!dbServices || dbServices.length === 0 || force_sync) {
+      // Auto sync if empty or force requested
+      console.log('Fetching live SMM services catalog...');
       const rawServices: any[] = await callSmmApi({ key: SMM_API_KEY, action: 'services' });
-      const uniqueCats = [...new Set(rawServices.map(s => s.category || 'Other'))];
-      for (const c of uniqueCats) {
-        await supabase.from('smm_categories').upsert({ name: c }, { onConflict: 'name', ignoreDuplicates: true });
+      if (Array.isArray(rawServices)) {
+        // Upsert categories
+        const uniqueCats = [...new Set(rawServices.map(s => s.category || 'Other'))];
+        for (const c of uniqueCats) {
+          await supabase.from('smm_categories').upsert({ name: c }, { onConflict: 'name', ignoreDuplicates: true });
+        }
+        
+        // Upsert services (update prices)
+        for (const item of rawServices) {
+          await supabase.from('smm_services').upsert({
+            service_id: parseInt(item.service),
+            category_name: item.category || 'Other',
+            api_name: item.name,
+            provider_rate: parseFloat(item.rate),
+            min_order: parseInt(item.min),
+            max_order: parseInt(item.max),
+            type: item.type || 'Default',
+            refill: !!item.refill,
+            is_active: true
+          }, { onConflict: 'service_id' });
+        }
       }
-      for (const item of rawServices) {
-        await supabase.from('smm_services').upsert({
-          service_id: parseInt(item.service),
-          category_name: item.category || 'Other',
-          api_name: item.name,
-          provider_rate: parseFloat(item.rate),
-          min_order: parseInt(item.min),
-          max_order: parseInt(item.max),
-          type: item.type || 'Default',
-          refill: !!item.refill
-        }, { onConflict: 'service_id' });
+
+      // Re-fetch from DB to get the patched data
+      const { data: nDbCats } = await supabase.from('smm_categories').select('*').order('sort_order', { ascending: true });
+      const { data: nDbSvc } = await supabase.from('smm_services').select('*').eq('is_active', true).order('sort_order', { ascending: true });
+      
+      // Update our local references
+      const categoriesMap = new Map();
+      if (nDbCats) {
+        for (const c of nDbCats) categoriesMap.set(c.name, c);
       }
-      // Re-fetch
-      const { data: nDbCats } = await supabase.from('smm_categories').select('*');
-      const { data: nDbSvc } = await supabase.from('smm_services').select('*').eq('is_active', true);
-      dbCategories?.push(...(nDbCats || []));
-      dbServices?.push(...(nDbSvc || []));
+
+      const patchedServices = (nDbSvc || []).map((row: any) => {
+        const cat = categoriesMap.get(row.category_name) || {};
+        if (cat.is_active === false) return null;
+
+        const appliedMargin = row.custom_margin !== null && row.custom_margin !== undefined
+          ? parseFloat(row.custom_margin)
+          : (cat.custom_margin !== null && cat.custom_margin !== undefined ? parseFloat(cat.custom_margin) : PROFIT_MARKUP_PERCENT);
+
+        const originalRate = parseFloat(row.provider_rate);
+        const ratePer1000 = Math.round((originalRate * (1 + appliedMargin / 100)) * 100) / 100;
+
+        return {
+          id: String(row.service_id),
+          category: cat.custom_name || row.category_name,
+          name: row.custom_name || row.api_name || `Service #${row.service_id}`,
+          ratePer1000,
+          min: row.min_order,
+          max: row.max_order,
+          description: row.custom_description || `⚡ High-quality SMM delivery system for ${row.category_name}.`,
+          sort_order: row.sort_order
+        };
+      }).filter(Boolean);
+
+      servicesCache = patchedServices;
+      lastCacheUpdate = Date.now();
+      return res.json({ success: true, services: patchedServices });
     }
 
     const categoriesMap = new Map();
@@ -192,14 +267,19 @@ app.post('/api/smm/services', async (req, res) => {
 
       return {
         id: String(row.service_id),
-        category: row.category_name,
+        category: cat.custom_name || row.category_name, // Respect custom category names if any
         name,
         ratePer1000,
         min: row.min_order,
         max: row.max_order,
-        description
+        description,
+        sort_order: row.sort_order
       };
     }).filter(Boolean);
+
+    // Update cache
+    servicesCache = patchedServices;
+    lastCacheUpdate = Date.now();
 
     res.json({ success: true, services: patchedServices });
   } catch (err: any) {
@@ -522,42 +602,36 @@ app.post('/api/smm/admin/login', async (req, res) => {
       .single();
 
     if (error || !adminUser) {
-      // Fallback for memory if DB isn't strictly responding as expected but we want default access
-      if (username === 'admin' && password === 'admin123') {
-        return res.json({ success: true, token: 'dev-admin-token-fallback' });
-      }
       return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
 
     // Success
     res.json({ success: true, token: 'admin-super-secret-token-xyz' });
   } catch (err: any) {
-    // Memory Fallback
-    if (username === 'admin' && password === 'admin123') {
-      return res.json({ success: true, token: 'dev-admin-token-fallback' });
-    }
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 app.get('/api/smm/admin/dashboard', async (req, res) => {
   try {
-    const balanceRes = await callSmmApi({ key: SMM_API_KEY, action: 'balance' }).catch(() => ({ balance: 0, currency: 'USD' }));
+    const balanceRes = await callSmmApi({ key: SMM_API_KEY, action: 'balance' }).catch(() => ({ balance: 0, currency: 'INR' }));
     
-    // Simulate finding total orders/revenue from orders endpoint (will fall back if DB missing)
-    const { data: dbOrders } = await supabase.from('orders').select('*');
+    const { data: dbOrders } = await supabase.from('orders').select('id, charge');
+    const { data: dbUsers } = await supabase.from('profiles').select('id');
+    const { data: dbTransactions } = await supabase.from('transactions').select('id');
+    
     const orders = dbOrders || [];
 
     res.json({ 
       success: true, 
       stats: {
-        totalUsers: usersMemory.length,
+        totalUsers: (dbUsers || []).length,
         totalOrders: orders.length,
         totalRevenue: orders.reduce((sum, o) => sum + parseFloat(o.charge || '0'), 0),
-        totalTransactions: transactionsMemory.length + rechargesMemory.length,
+        totalTransactions: (dbTransactions || []).length,
         providerBalance: balanceRes?.balance || 0,
-        referralPayouts: referalPayoutsMemory,
-        pendingRecharges: pendingRechargesMemory.length,
+        referralPayouts: 0,
+        pendingRecharges: 0,
         recentActivity: orders.slice(0, 5)
       }
     });
@@ -567,44 +641,54 @@ app.get('/api/smm/admin/dashboard', async (req, res) => {
 });
 
 app.get('/api/smm/admin/users', async (req, res) => {
-  res.json({ success: true, users: usersMemory });
+  try {
+    const { data: users } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    res.json({ success: true, users: users || [] });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/smm/admin/users/update-balance', async (req, res) => {
   const { email, balance } = req.body;
-  const user = usersMemory.find(u => u.email === email);
-  if (user) {
-    user.balance = parseFloat(balance);
+  try {
+    const { error } = await supabase.from('profiles').update({ balance }).eq('email', email);
+    if (error) throw error;
     res.json({ success: true });
-  } else {
-    res.status(404).json({ success: false });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 app.post('/api/smm/admin/users/toggle-admin', async (req, res) => {
   const { email, is_admin } = req.body;
-  const user = usersMemory.find(u => u.email === email);
-  if (user) {
-    user.is_admin = !!is_admin;
+  try {
+    const { error } = await supabase.from('profiles').update({ is_admin }).eq('email', email);
+    if (error) throw error;
     res.json({ success: true });
-  } else {
-    res.status(404).json({ success: false });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 app.post('/api/smm/admin/users/toggle-ban', async (req, res) => {
   const { email, is_banned } = req.body;
-  const user = usersMemory.find(u => u.email === email);
-  if (user) {
-    user.status = is_banned ? 'banned' : 'active';
+  try {
+    const { error } = await supabase.from('profiles').update({ status: is_banned ? 'banned' : 'active' }).eq('email', email);
+    if (error) throw error;
     res.json({ success: true });
-  } else {
-    res.status(404).json({ success: false });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 app.get('/api/smm/admin/transactions', async (req, res) => {
-  res.json({ success: true, transactions: transactionsMemory, pendingRecharges: pendingRechargesMemory, recharges: rechargesMemory });
+  try {
+    const { data: transactions } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+    res.json({ success: true, transactions: transactions || [], pendingRecharges: [], recharges: [] });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/smm/admin/transactions/approve-recharge', async (req, res) => {
@@ -619,23 +703,60 @@ app.post('/api/smm/admin/transactions/reject-recharge', async (req, res) => {
 
 // Categories and Services overrides
 app.get('/api/smm/admin/categories', async (req, res) => {
-  res.json({ success: true, categoryOverrides: categoryOverridesMemory });
+  try {
+    const { data: categories } = await supabase.from('smm_categories').select('*').order('sort_order', { ascending: true });
+    res.json({ success: true, categories: categories || [] });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/smm/admin/categories/update', async (req, res) => {
-  const { category, override } = req.body;
-  categoryOverridesMemory[category] = override;
-  res.json({ success: true });
+  const { name, is_active, custom_margin, custom_name, sort_order } = req.body;
+  try {
+    const { error } = await supabase.from('smm_categories').upsert({
+      name,
+      is_active,
+      custom_margin,
+      custom_name,
+      sort_order
+    }, { onConflict: 'name' });
+    
+    if (error) throw error;
+    servicesCache = null; // Invalidate cache
+    res.json({ success: true });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/smm/admin/services', async (req, res) => {
-  res.json({ success: true, serviceOverrides: serviceOverridesMemory });
+  try {
+    const { data: services } = await supabase.from('smm_services').select('*').order('sort_order', { ascending: true });
+    res.json({ success: true, services: services || [] });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/smm/admin/services/update', async (req, res) => {
-  const { id, override } = req.body;
-  serviceOverridesMemory[id] = override;
-  res.json({ success: true });
+  const { service_id, is_active, custom_margin, custom_name, custom_description, sort_order } = req.body;
+  try {
+    const { error } = await supabase.from('smm_services').upsert({
+      service_id,
+      is_active,
+      custom_margin,
+      custom_name,
+      custom_description,
+      sort_order
+    }, { onConflict: 'service_id' });
+    
+    if (error) throw error;
+    servicesCache = null; // Invalidate cache
+    res.json({ success: true });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/smm/admin/orders', async (req, res) => {
@@ -644,6 +765,15 @@ app.get('/api/smm/admin/orders', async (req, res) => {
     res.json({ success: true, orders: data || [] });
   } catch (err: any) {
     res.json({ success: true, orders: [] });
+  }
+});
+
+app.get('/api/smm/admin/provider-balance', async (req, res) => {
+  try {
+    const data = await callSmmApi({ key: SMM_API_KEY, action: 'balance' });
+    res.json({ success: true, balance: data.balance, currency: data.currency });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
   }
 });
 

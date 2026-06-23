@@ -10,14 +10,15 @@ export default function App() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [services, setServices] = useState<SMMService[]>(INITIAL_SERVICES);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [globalSettings, setGlobalSettings] = useState({
-    landing_video_url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=0&mute=1&controls=1',
+    landing_video_url: '',
     profit_markup_percent: 15
   });
 
   // Fetch dynamic settings from server
   const fetchSettings = () => {
-    fetch('https://followlike-in.onrender.com/api/smm/settings')
+    fetch('/api/smm/settings')
       .then(res => res.json())
       .then(data => {
         if (data && data.success && data.settings) {
@@ -31,7 +32,7 @@ export default function App() {
 
   // Fetch live SMM services from our backend API proxy on boot
   useEffect(() => {
-    fetch('https://followlike-in.onrender.com/api/smm/services', {
+    fetch('/api/smm/services', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })
@@ -47,7 +48,7 @@ export default function App() {
       });
     
     fetchSettings();
-  }, [globalSettings.profit_markup_percent]);
+  }, []); // Only fetch on mount, profit_markup_percent is handled by the backend mapping
 
   // Read stored user session on initial boot up
   useEffect(() => {
@@ -73,6 +74,27 @@ export default function App() {
     localStorage.removeItem('smm_session');
   };
 
+  const refreshServices = async (forceSync = false) => {
+    setRefreshing(true);
+    try {
+      const res = await fetch('/api/smm/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_sync: forceSync })
+      });
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.services)) {
+        setServices(data.services);
+        return true;
+      }
+    } catch (err) {
+      console.error('Failed to refresh services:', err);
+    } finally {
+      setRefreshing(false);
+    }
+    return false;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center font-sans">
@@ -82,7 +104,7 @@ export default function App() {
           </div>
         </div>
         <div className="text-xs font-mono text-neutral-500 uppercase tracking-widest animate-pulse">
-          Loading your panel...
+          Loading Social Up Hub...
         </div>
       </div>
     );
@@ -110,9 +132,10 @@ export default function App() {
                 onLogout={handleLogout}
                 servicesCatalog={services}
                 initialOrders={INITIAL_ORDERS}
-                initialTickets={INITIAL_TICKETS}
                 globalSettings={globalSettings}
                 onUpdateSettings={(newSet) => setGlobalSettings(newSet)}
+                refreshServices={refreshServices}
+                refreshingServices={refreshing}
               />
             ) : (
               <LandingPage
