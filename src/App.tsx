@@ -17,7 +17,7 @@ export default function App() {
 
   // Fetch dynamic settings from server
   const fetchSettings = () => {
-    fetch('/api/smm/settings')
+    fetch('https://followlike-in.onrender.com/api/smm/settings')
       .then(res => res.json())
       .then(data => {
         if (data && data.success && data.settings) {
@@ -31,7 +31,7 @@ export default function App() {
 
   // Fetch live SMM services from our backend API proxy on boot
   useEffect(() => {
-    fetch('/api/smm/services', {
+    fetch('https://followlike-in.onrender.com/api/smm/services', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })

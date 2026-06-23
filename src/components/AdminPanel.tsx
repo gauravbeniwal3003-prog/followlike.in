@@ -42,7 +42,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
     e.preventDefault();
     setAuthError('');
     try {
-      const res = await fetch('/api/smm/admin/login', {
+      const res = await fetch('https://followlike-in.onrender.com/api/smm/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: authUsername, password: authPassword })
@@ -74,16 +74,16 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
     fetchServices();
     
     // Also fetch the standard services list to have the catalog
-    fetch('/api/smm/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }})
+    fetch('https://followlike-in.onrender.com/api/smm/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }})
       .then(r => r.json())
       .then(d => { if (d.success) setAllServices(d.services || []) });
   }, []);
 
-  const fetchDashboard = () => fetch('/api/smm/admin/dashboard').then(r => r.json()).then(d => { if (d.success) setDashboardStats(d.stats) });
-  const fetchUsers = () => fetch('/api/smm/admin/users').then(r => r.json()).then(d => { if (d.success) setUsers(d.users) });
-  const fetchTransactions = () => fetch('/api/smm/admin/transactions').then(r => r.json()).then(d => { if(d.success) setTransactions(d.transactions || []) });
-  const fetchCategories = () => fetch('/api/smm/admin/categories').then(r => r.json()).then(d => { if(d.success) setCategoryOverrides(d.categoryOverrides || {}) });
-  const fetchServices = () => fetch('/api/smm/admin/services').then(r => r.json()).then(d => { if(d.success) setServiceOverrides(d.serviceOverrides || {}) });
+  const fetchDashboard = () => fetch('https://followlike-in.onrender.com/api/smm/admin/dashboard').then(r => r.json()).then(d => { if (d.success) setDashboardStats(d.stats) });
+  const fetchUsers = () => fetch('https://followlike-in.onrender.com/api/smm/admin/users').then(r => r.json()).then(d => { if (d.success) setUsers(d.users) });
+  const fetchTransactions = () => fetch('https://followlike-in.onrender.com/api/smm/admin/transactions').then(r => r.json()).then(d => { if(d.success) setTransactions(d.transactions || []) });
+  const fetchCategories = () => fetch('https://followlike-in.onrender.com/api/smm/admin/categories').then(r => r.json()).then(d => { if(d.success) setCategoryOverrides(d.categoryOverrides || {}) });
+  const fetchServices = () => fetch('https://followlike-in.onrender.com/api/smm/admin/services').then(r => r.json()).then(d => { if(d.success) setServiceOverrides(d.serviceOverrides || {}) });
 
   const Header = () => (
     <div className="flex flex-col sm:flex-row justify-between items-center sm:items-center bg-black border-b border-white/5 p-4 sticky top-0 z-50 gap-4 sm:gap-0">
@@ -202,7 +202,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
           <button 
             onClick={() => {
               if (confirm('Regular sync will update all active services from the provider. Continue?')) {
-                fetch('/api/smm/admin/services/sync', { method: 'POST' })
+                fetch('https://followlike-in.onrender.com/api/smm/admin/services/sync', { method: 'POST' })
                   .then(r => r.json())
                   .then(d => { alert('Sync Complete'); fetchDashboard(); fetchServices(); fetchCategories(); })
                   .catch(e => alert('Sync failed'));
@@ -215,7 +215,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
           <button 
             onClick={() => {
               if (confirm('WARNING: Force sync will delete all categories and services and re-fetch them from scratch. Proceed?')) {
-                fetch('/api/smm/admin/services/sync', { 
+                fetch('https://followlike-in.onrender.com/api/smm/admin/services/sync', { 
                   method: 'POST', 
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ force_reset: true })
@@ -299,7 +299,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                       onClick={() => {
                         const newBal = prompt('Enter new balance:', u.balance.toString());
                         if (newBal && !isNaN(parseFloat(newBal))) {
-                          fetch('/api/smm/admin/users/update-balance', {
+                          fetch('https://followlike-in.onrender.com/api/smm/admin/users/update-balance', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({ email: u.email, balance: parseFloat(newBal) })
                           }).then(() => fetchUsers());
@@ -311,7 +311,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                     </button>
                     <button 
                       onClick={() => {
-                        fetch('/api/smm/admin/users/toggle-ban', {
+                        fetch('https://followlike-in.onrender.com/api/smm/admin/users/toggle-ban', {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
                           body: JSON.stringify({ email: u.email, is_banned: u.status !== 'banned' })
                         }).then(() => fetchUsers());
@@ -342,7 +342,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
 
   const renderMargin = () => {
     const handleSaveGlobal = () => {
-      fetch('/api/smm/settings/update', {
+      fetch('https://followlike-in.onrender.com/api/smm/settings/update', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ profit_markup_percent: globalMargin, landing_video_url: landingVideo })
       }).then(() => alert('System settings saved!'));
@@ -431,7 +431,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                         onClick={() => {
                           const m = prompt('Enter custom margin % (or leave blank to clear):', conf.margin?.toString() || '');
                           const newConf = { ...conf, margin: m ? parseFloat(m) : undefined };
-                          fetch('/api/smm/admin/categories/update', {
+                          fetch('https://followlike-in.onrender.com/api/smm/admin/categories/update', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({ category: cat, override: newConf })
                           }).then(() => fetchCategories());
@@ -443,7 +443,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                       <button 
                         onClick={() => {
                           const newConf = { ...conf, disabled: !conf.disabled };
-                          fetch('/api/smm/admin/categories/update', {
+                          fetch('https://followlike-in.onrender.com/api/smm/admin/categories/update', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({ category: cat, override: newConf })
                           }).then(() => fetchCategories());
@@ -500,7 +500,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                         const n = prompt('Override Name:', conf.name || srv.name);
                         const m = prompt('Custom Margin % (leave blank to inherit):', conf.margin?.toString() || '');
                         const newConf = { ...conf, name: n || undefined, margin: m ? parseFloat(m) : undefined };
-                        fetch('/api/smm/admin/services/update', {
+                        fetch('https://followlike-in.onrender.com/api/smm/admin/services/update', {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
                           body: JSON.stringify({ id: srv.id, override: newConf })
                         }).then(() => fetchServices());
@@ -512,7 +512,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
                     <button 
                       onClick={() => {
                         const newConf = { ...conf, disabled: !conf.disabled };
-                        fetch('/api/smm/admin/services/update', {
+                        fetch('https://followlike-in.onrender.com/api/smm/admin/services/update', {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
                           body: JSON.stringify({ id: srv.id, override: newConf })
                         }).then(() => fetchServices());

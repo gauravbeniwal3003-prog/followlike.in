@@ -148,28 +148,28 @@ export default function Dashboard({
     setAdminLoading(true);
     try {
       // Fetch users
-      const usersRes = await fetch('/api/smm/admin/users');
+      const usersRes = await fetch('https://followlike-in.onrender.com/api/smm/admin/users');
       const usersData = await usersRes.json();
       if (usersData && usersData.success) {
         setAdminUsers(usersData.users);
       }
 
       // Fetch coupons
-      const couponsRes = await fetch('/api/smm/coupons');
+      const couponsRes = await fetch('https://followlike-in.onrender.com/api/smm/coupons');
       const couponsData = await couponsRes.json();
       if (couponsData && couponsData.success) {
         setAdminCoupons(couponsData.coupons);
       }
 
       // Fetch transactions
-      const txRes = await fetch('/api/smm/admin/transactions');
+      const txRes = await fetch('https://followlike-in.onrender.com/api/smm/admin/transactions');
       const txData = await txRes.json();
       if (txData && txData.success) {
         setAdminTransactions(txData.transactions);
       }
 
       // Fetch orders
-      const ordersRes = await fetch('/api/smm/admin/orders');
+      const ordersRes = await fetch('https://followlike-in.onrender.com/api/smm/admin/orders');
       const ordersData = await ordersRes.json();
       if (ordersData && ordersData.success) {
         setAdminOrders(ordersData.orders);
@@ -191,7 +191,7 @@ export default function Dashboard({
     const amount = parseFloat(amountStr);
     if (isNaN(amount)) return;
     try {
-      const res = await fetch('/api/smm/admin/users/update-balance', {
+      const res = await fetch('https://followlike-in.onrender.com/api/smm/admin/users/update-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, balance: amount })
@@ -212,7 +212,7 @@ export default function Dashboard({
   const handleToggleAdminStatus = async (email: string, currentVal: boolean) => {
     const newVal = !currentVal;
     try {
-      const res = await fetch('/api/smm/admin/users/toggle-admin', {
+      const res = await fetch('https://followlike-in.onrender.com/api/smm/admin/users/toggle-admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, is_admin: newVal })
@@ -230,7 +230,7 @@ export default function Dashboard({
     e.preventDefault();
     if (!newCouponCode.trim()) return;
     try {
-      const res = await fetch('/api/smm/coupons/create', {
+      const res = await fetch('https://followlike-in.onrender.com/api/smm/coupons/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -252,7 +252,7 @@ export default function Dashboard({
 
   const handleDeleteCoupon = async (code: string) => {
     try {
-      const res = await fetch('/api/smm/coupons/delete', {
+      const res = await fetch('https://followlike-in.onrender.com/api/smm/coupons/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code })
@@ -270,7 +270,7 @@ export default function Dashboard({
     e.preventDefault();
     setSettingsStatus('Saving settings update...');
     try {
-      const res = await fetch('/api/smm/settings/update', {
+      const res = await fetch('https://followlike-in.onrender.com/api/smm/settings/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -436,7 +436,7 @@ export default function Dashboard({
     }
 
     try {
-      const response = await fetch('/api/smm/status-sync', {
+      const response = await fetch('https://followlike-in.onrender.com/api/smm/status-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orders: targetOrders })
@@ -598,7 +598,7 @@ export default function Dashboard({
     setOrderNotification({ type: 'success', text: 'Routing order automatically to provider API...' });
 
     try {
-      const res = await fetch('/api/smm/order', {
+      const res = await fetch('https://followlike-in.onrender.com/api/smm/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -691,7 +691,7 @@ export default function Dashboard({
     }
     setCouponValidationNotice('Validating coupon...');
     try {
-      const res = await fetch('/api/smm/coupons/apply', {
+      const res = await fetch('https://followlike-in.onrender.com/api/smm/coupons/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: couponCode, email: session.email })
@@ -1403,7 +1403,7 @@ export default function Dashboard({
                       ))}
                     </select>
                     {/* Service Description display */}
-                    <div className="mt-2.5 p-3 rounded-lg bg-black/60 text-[10px] text-neutral-400 leading-relaxed font-sans border border-white/5">
+                    <div className="mt-2.5 p-3 rounded-lg bg-black/60 text-[10px] text-neutral-400 leading-relaxed font-sans border border-white/5 whitespace-pre-wrap">
                       <span className="font-semibold text-white block mb-0.5">🚀 Service Details:</span>
                       {servicesCatalog.find(s => s.id === selectedServiceId)?.description || 'Fast and guaranteed delivery service. Speeds may vary slightly depending on current order traffic.'}
                     </div>
@@ -1780,7 +1780,7 @@ export default function Dashboard({
                         </div>
                         <h4 className="text-sm font-semibold text-white tracking-tight">{service.name}</h4>
                         {service.description && (
-                          <p className="text-xs text-neutral-400 max-w-2xl font-sans leading-normal">{service.description}</p>
+                          <p className="text-xs text-neutral-400 max-w-2xl font-sans leading-normal whitespace-pre-wrap">{service.description}</p>
                         )}
                         
                         <div className="flex flex-wrap gap-4 text-[10px] font-mono text-neutral-500 pt-1">
