@@ -25,7 +25,7 @@ app.add_middleware(
 SUPABASE_URL = os.environ.get("VITE_SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("VITE_SUPABASE_ANON_KEY", "")
 SMM_API_KEY = os.environ.get("SMM_API_KEY", "")
-SMM_API_URL = "https://socialuphub.com/api/v2"
+SMM_API_URL = "https://socialuphub.in/api/v2"
 
 # Setup Supabase Client
 supabase: Client = None
@@ -190,13 +190,14 @@ async def get_orders():
 async def get_categories():
     if not supabase: return {"success": False}
     try:
-        categories = supabase.table('smm_categories').select('*').execute().data or []
+        categories = supabase.table('smm_categories').select('*').order('name').execute().data or []
         # Return as categoryOverrides format for backwards compatibility with panel map
         override_map = {}
         for c in categories:
             override_map[c['name']] = {
                 "margin": c.get('custom_margin'),
-                "disabled": not c.get('is_active', True)
+                "disabled": not c.get('is_active', True),
+                "custom_name": c.get('custom_name')
             }
         return {"success": True, "categoryOverrides": override_map, "categories": categories}
     except Exception as e:
@@ -211,6 +212,8 @@ async def update_category(req: CategoryUpdateRequest):
             upd['is_active'] = not req.override['disabled']
         if 'margin' in req.override:
             upd['custom_margin'] = req.override['margin']
+        if 'custom_name' in req.override:
+            upd['custom_name'] = req.override['custom_name']
 
         if upd:
             supabase.table('smm_categories').update(upd).eq('name', req.category).execute()
@@ -222,7 +225,7 @@ async def update_category(req: CategoryUpdateRequest):
 async def get_admin_services():
     if not supabase: return {"success": False}
     try:
-        services = supabase.table('smm_services').select('*').execute().data or []
+        services = supabase.table('smm_services').select('*').order('service_id').execute().data or []
         override_map = {}
         for s in services:
             override_map[str(s['service_id'])] = {
@@ -345,8 +348,8 @@ async def sync_services(req: SyncRequest):
 async def get_services():
     if not supabase: return {"success": False, "error": "Supabase not configured"}
     try:
-        categories_res = supabase.table("smm_categories").select("*").execute()
-        services_res = supabase.table("smm_services").select("*").eq("is_active", True).execute()
+        categories_res = supabase.table("smm_categories").select("*").order('name').execute()
+        services_res = supabase.table("smm_services").select("*").eq("is_active", True).order('service_id').execute()
         
         categories_map = {c["name"]: c for c in categories_res.data}
         
@@ -361,7 +364,7 @@ async def get_services():
             
             format_services.append({
                  "id": str(row["service_id"]),
-                 "category": row["category_name"],
+                 "category": cat.get("custom_name") or row["category_name"],
                  "name": row.get("custom_name") or row["api_name"],
                  "ratePer1000": rate_per_1000, 
                  "min": row["min_order"],
