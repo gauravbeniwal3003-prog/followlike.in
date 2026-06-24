@@ -2,16 +2,27 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+function hashPassword(password: string): string {
+  return crypto.createHash("sha256").update(password).digest("hex");
+}
 
 // Base SMM Configuration
-const SMM_API_KEY =
-  process.env.SMM_API_KEY || "4f875a1ab9fc4c8ca31cb98a6e82e98c";
-const SMM_API_URL = "https://socialuphub-backend.onrender.com/api/v2";
+const SMM_API_KEY = process.env.SMM_API_KEY;
+const SMM_API_URL = process.env.SMM_API_URL;
 
-const SUPABASE_URL = "https://mfrnehshclymmydtykpa.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mcm5laHNoY2x5bW15ZHR5a3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzQyNjUsImV4cCI6MjA5NzcxMDI2NX0.dhdfx9xURndzS6MSSsZmH5HI0O59VAY8Vfl7UZt4yxM";
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+
+if (!SMM_API_KEY || !SMM_API_URL || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error("Missing required environment variables.");
+}
+
+const supabase = createClient(SUPABASE_URL as string, SUPABASE_ANON_KEY as string);
 
 let PROFIT_MARKUP_PERCENT = 15;
 let LANDING_VIDEO_URL = ""; // Removed rickroll demo video
@@ -952,6 +963,141 @@ app.post("/api/smm/coupons/delete", async (req, res) => {
     console.warn("Coupon db delete fail:", err);
   }
   res.json({ success: true });
+});
+
+// === USER SIGNUP & SIGNIN AUTH SYSTEM ===
+
+// User Signup
+app.post("/api/auth/signup", async (req, res) => {
+  const { email, phone, password, name } = req.body;
+  if (!email || !phone || !password) {
+    return res.status(400).json({ success: false, error: "Missing required fields" });
+  }
+  // Basic validation
+  if (!email.includes("@")) {
+    return res.status(400).json({ success: false, error: "Invalid email format" });
+  }
+  if (phone.length < 10) {
+    return res.status(400).json({ success: false, error: "Invalid phone number length" });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ success: false, error: "Password must be at least 6 characters" });
+  }
+
+  try {
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanPhone = phone.trim();
+
+    // Check if email already exists
+    const { data: existingEmail, error: emailCheckError } = await supabase
+      .from("profiles")
+      .select("email")
+      .eq("email", cleanEmail)
+      .maybeSingle();
+
+    if (existingEmail) {
+      return res.status(400).json({ success: false, error: "Email already registered" });
+    }
+
+    // Check if phone already exists
+    const { data: existingPhone } = await supabase
+      .from("profiles")
+      .select("phone")
+      .eq("phone", cleanPhone)
+      .maybeSingle();
+
+    if (existingPhone) {
+      return res.status(400).json({ success: false, error: "Phone number already registered" });
+    }
+
+    // Generate hashed password
+    const password_hash = hashPassword(password);
+    const pic = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || cleanEmail.split("@")[0])}&backgroundColor=000000&color=ffffff`;
+    const initialBalance = 0; // INR 0 default balance
+    const apiKey = "smm_KEY" + crypto.randomBytes(6).toString("hex").toUpperCase();
+    const is_admin = cleanEmail === "gauravbeniwal30003@gmail.com";
+
+    const { error: insertError } = await supabase
+      .from("profiles")
+      .insert({
+        email: cleanEmail,
+        phone: cleanPhone,
+        password_hash,
+        name: name || cleanEmail.split("@")[0],
+        picture: pic,
+        balance: initialBalance,
+        api_key: apiKey,
+        is_admin,
+      });
+
+    if (insertError) {
+      throw insertError;
+    }
+
+    res.json({
+      success: true,
+      user: {
+        email: cleanEmail,
+        phone: cleanPhone,
+        name: name || cleanEmail.split("@")[0],
+        picture: pic,
+        balance: initialBalance,
+        apiKey,
+        isAdmin: is_admin,
+      }
+    });
+  } catch (err: any) {
+    console.error("Signup error:", err);
+    res.status(500).json({ success: false, error: err.message || "Failed to create account" });
+  }
+});
+
+// User Signin
+app.post("/api/auth/signin", async (req, res) => {
+  const { loginIdentifier, password } = req.body; // loginIdentifier can be email or phone
+  if (!loginIdentifier || !password) {
+    return res.status(400).json({ success: false, error: "Missing required fields" });
+  }
+
+  try {
+    const hash = hashPassword(password);
+    const identifier = loginIdentifier.trim();
+
+    let query = supabase.from("profiles").select("*");
+    if (identifier.includes("@")) {
+      query = query.eq("email", identifier.toLowerCase());
+    } else {
+      query = query.eq("phone", identifier);
+    }
+
+    const { data: user, error } = await query.maybeSingle();
+
+    if (error || !user) {
+      return res.status(401).json({ success: false, error: "Invalid email/phone or password" });
+    }
+
+    if (user.password_hash !== hash) {
+      return res.status(401).json({ success: false, error: "Invalid email/phone or password" });
+    }
+
+    const automatedAdmin = user.email.toLowerCase() === "gauravbeniwal30003@gmail.com";
+
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        phone: user.phone,
+        name: user.name,
+        picture: user.picture || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name)}&backgroundColor=000000&color=ffffff`,
+        balance: parseFloat(user.balance),
+        apiKey: user.api_key,
+        isAdmin: user.is_admin || automatedAdmin,
+      }
+    });
+  } catch (err: any) {
+    console.error("Signin error:", err);
+    res.status(500).json({ success: false, error: err.message || "Authentication failed" });
+  }
 });
 
 // === ADMIN USERS & DATA CONTROL ===

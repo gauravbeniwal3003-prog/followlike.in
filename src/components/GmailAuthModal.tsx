@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Shield, User, CornerDownRight, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Mail, Phone, Lock, Eye, EyeOff, Shield, User, RefreshCw, CheckCircle } from 'lucide-react';
 import { UserSession } from '../types';
 
 interface GmailAuthModalProps {
@@ -9,206 +9,428 @@ interface GmailAuthModalProps {
   userEmail?: string;
 }
 
-export default function GmailAuthModal({ isOpen, onClose, onSuccess, userEmail = 'gauravbeniwal30003@gmail.com' }: GmailAuthModalProps) {
-  const [step, setStep] = useState<'select' | 'custom' | 'authorizing'>('select');
-  const [customEmail, setCustomEmail] = useState('');
-  const [customName, setCustomName] = useState('');
+export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuthModalProps) {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  
+  // Inputs
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  
+  // States
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
     if (!isOpen) {
-      setStep('select');
-      setCustomEmail('');
-      setCustomName('');
+      setMode('signin');
+      setName('');
+      setEmail('');
+      setPhone('');
+      setPassword('');
+      setConfirmPassword('');
+      setLoginIdentifier('');
       setError('');
+      setSuccessMsg('');
+      setLoading(false);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSelectAccount = async (email: string, name: string) => {
-    setStep('authorizing');
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    if (!loginIdentifier.trim() || !password) {
+      setError('Please fill in all fields.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      const { syncUserProfile } = await import('../lib/supabase');
-      const session = await syncUserProfile(email, name);
-      onSuccess(session);
-    } catch (err) {
-      console.error('Supabase profile sync error:', err);
-      onSuccess({
-        email,
-        name,
-        picture: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=000000&color=ffffff`,
-        balance: 10000.00, // INR 10,000 fallback balance
-        apiKey: 'smm_' + Math.random().toString(36).substring(2, 17).toUpperCase(),
+      const response = await fetch('/api/auth/signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          loginIdentifier: loginIdentifier.trim(),
+          password
+        })
       });
+
+      const resData = await response.json();
+      if (!response.ok || !resData.success) {
+        setError(resData.error || 'Invalid credentials. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      setSuccessMsg('Signed in successfully! Redirecting...');
+      setTimeout(() => {
+        onSuccess(resData.user);
+        onClose();
+      }, 1000);
+    } catch (err: any) {
+      console.error(err);
+      setError('Server connection error. Please try again.');
+      setLoading(false);
     }
   };
 
-  const handleCustomSubmit = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customEmail || !customEmail.includes('@')) {
+    setError('');
+    setSuccessMsg('');
+
+    if (!email.trim() || !phone.trim() || !password || !confirmPassword) {
+      setError('Please fill in all required fields.');
+      return;
+    }
+
+    if (!email.includes('@')) {
       setError('Please enter a valid Gmail address.');
       return;
     }
-    const derivedName = customName || customEmail.split('@')[0].toUpperCase();
-    handleSelectAccount(customEmail, derivedName);
+
+    if (phone.trim().length < 10) {
+      setError('Please enter a valid 10-digit phone number.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim() || undefined,
+          email: email.trim(),
+          phone: phone.trim(),
+          password
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok || !resData.success) {
+        setError(resData.error || 'Failed to create account.');
+        setLoading(false);
+        return;
+      }
+
+      setSuccessMsg('Account created successfully! Auto-signing you in...');
+      setTimeout(() => {
+        onSuccess(resData.user);
+        onClose();
+      }, 1200);
+    } catch (err) {
+      console.error(err);
+      setError('Server connection error. Please try again.');
+      setLoading(false);
+    }
   };
 
   return (
-    <div id="gmail-auth-backdrop" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      {/* Outer liquid borders */}
-      <div id="gmail-auth-container" className="relative w-full max-w-md overflow-hidden rounded-2xl glass-card transition-all duration-300">
+    <div id="auth-modal-backdrop" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <div id="auth-modal-container" className="relative w-full max-w-md overflow-hidden rounded-2xl glass-card transition-all duration-300 border border-white/10 bg-neutral-900/90 text-white shadow-2xl">
         
-        {/* Glow effect */}
+        {/* Glow accent top */}
         <div className="absolute top-0 left-1/4 right-1/4 h-[1px] bg-gradient-to-r from-transparent via-white/40 to-transparent"></div>
         
         <div className="p-6 sm:p-8">
           {/* Header */}
           <div className="flex flex-col items-center mb-6 text-center">
-            {/* Minimal google G layout */}
-            <div className="flex items-center justify-center w-12 h-12 mb-3 bg-white/5 border border-white/10 rounded-full">
-              <svg className="w-6 h-6 text-white" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
+            <div className="flex items-center justify-center w-12 h-12 mb-3 bg-white/5 border border-white/10 rounded-full text-white font-black tracking-widest text-sm">
+              FL
             </div>
-            
-            <h3 className="text-xl font-semibold tracking-tight text-white">Sign in with Google</h3>
-            <p className="mt-1 text-xs text-neutral-400">to continue to SMM Panel Dashboard</p>
+            <h3 className="text-xl font-bold tracking-tight text-white font-sans uppercase">
+              FollowLike Everywhere
+            </h3>
+            <p className="mt-1 text-xs text-neutral-400">Secure SMM Client Authorization Panel</p>
           </div>
 
-          {step === 'select' && (
-            <div className="space-y-4">
-              <p className="text-xs font-medium text-neutral-400 mb-2">Choose an account</p>
-              
-              {/* Account 1: Logged-in User Email */}
-              <button
-                id="select-account-btn-primary"
-                onClick={() => handleSelectAccount(userEmail, userEmail.split('@')[0])}
-                className="flex items-center w-full p-3 text-left transition-all rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.08] hover:border-white/20 group"
-              >
-                <div className="flex items-center justify-center w-10 h-10 bg-white/10 rounded-full border border-white/10 text-white font-medium">
-                  {userEmail.substring(0, 2).toUpperCase()}
-                </div>
-                <div className="ml-3 overflow-hidden flex-1">
-                  <div className="text-sm font-medium text-white group-hover:text-white flex items-center">
-                    <span>{userEmail.split('@')[0]}</span>
-                    <span className="ml-[6px] px-[5px] py-[1px] text-[9px] bg-white text-black font-semibold rounded-full uppercase">User</span>
-                  </div>
-                  <div className="text-xs text-neutral-400 truncate">{userEmail}</div>
-                </div>
-                <CornerDownRight className="w-4 h-4 ml-2 text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
+          {/* Tab Selection */}
+          <div className="grid grid-cols-2 bg-white/[0.04] p-1 rounded-xl border border-white/5 mb-6">
+            <button
+              id="auth-tab-signin"
+              type="button"
+              onClick={() => {
+                setMode('signin');
+                setError('');
+                setSuccessMsg('');
+              }}
+              className={`py-2 text-xs font-semibold rounded-lg transition-all ${
+                mode === 'signin'
+                  ? 'bg-white text-black shadow-md'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              id="auth-tab-signup"
+              type="button"
+              onClick={() => {
+                setMode('signup');
+                setError('');
+                setSuccessMsg('');
+              }}
+              className={`py-2 text-xs font-semibold rounded-lg transition-all ${
+                mode === 'signup'
+                  ? 'bg-white text-black shadow-md'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
 
-              {/* Button to use another account */}
-              <button
-                id="use-another-account-btn"
-                onClick={() => setStep('custom')}
-                className="flex items-center justify-center w-full py-2.5 text-xs font-medium text-neutral-300 hover:text-white transition-colors border border-dashed border-white/10 rounded-lg hover:border-white/20 hover:bg-white/[0.02]"
-              >
-                <User className="w-3.5 h-3.5 mr-2" />
-                Sign in with another Gmail account
-              </button>
-
-              <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 text-[11px] text-neutral-500">
-                <span className="flex items-center">
-                  <Shield className="w-3 h-3 mr-1" />
-                  Secure Google SSL
-                </span>
-                <span className="hover:underline cursor-pointer" onClick={onClose}>Cancel Connection</span>
-              </div>
+          {/* Status Messages */}
+          {error && (
+            <div id="auth-error-block" className="mb-4 p-3 rounded-lg bg-red-950/40 border border-red-500/20 text-xs text-red-400 text-center font-medium">
+              {error}
+            </div>
+          )}
+          {successMsg && (
+            <div id="auth-success-block" className="mb-4 p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/20 text-xs text-emerald-400 text-center font-medium flex items-center justify-center gap-2">
+              <CheckCircle className="w-3.5 h-3.5 animate-bounce" />
+              {successMsg}
             </div>
           )}
 
-          {step === 'custom' && (
-            <form id="custom-gmail-form" onSubmit={handleCustomSubmit} className="space-y-4">
+          {/* Form Content */}
+          {mode === 'signin' ? (
+            <form id="signin-form" onSubmit={handleSignIn} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-neutral-400 mb-1">Your Name (Optional)</label>
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  Gmail / Phone Number
+                </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
                     <User className="w-4 h-4" />
                   </span>
                   <input
-                    id="gmail-custom-name-input"
+                    id="signin-identifier-input"
                     type="text"
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="e.g. John Doe"
-                    className="w-full pl-9 pr-4 py-2 text-sm text-white rounded-lg glass-input"
+                    required
+                    disabled={loading}
+                    value={loginIdentifier}
+                    onChange={(e) => setLoginIdentifier(e.target.value)}
+                    placeholder="Enter registered Email or Phone"
+                    className="w-full pl-9 pr-4 py-2.5 text-xs text-white bg-black/40 border border-white/10 rounded-xl focus:border-white/30 focus:outline-none transition-colors"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-neutral-400 mb-1">Gmail Address (Required)</label>
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
+                    <Lock className="w-4 h-4" />
+                  </span>
+                  <input
+                    id="signin-password-input"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    disabled={loading}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-10 py-2.5 text-xs text-white bg-black/40 border border-white/10 rounded-xl focus:border-white/30 focus:outline-none transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-neutral-500 hover:text-white transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  id="signin-submit-btn"
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-white text-black font-bold uppercase tracking-widest text-xs rounded-xl hover:bg-neutral-200 active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Signing In...
+                    </>
+                  ) : (
+                    'Verify Credentials'
+                  )}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form id="signup-form" onSubmit={handleSignUp} className="space-y-4 max-h-[380px] overflow-y-auto pr-1">
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  Full Name (Optional)
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
+                    <User className="w-4 h-4" />
+                  </span>
+                  <input
+                    id="signup-name-input"
+                    type="text"
+                    disabled={loading}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Gaurav Beniwal"
+                    className="w-full pl-9 pr-4 py-2.5 text-xs text-white bg-black/40 border border-white/10 rounded-xl focus:border-white/30 focus:outline-none transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  Gmail Address *
+                </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
                     <Mail className="w-4 h-4" />
                   </span>
                   <input
-                    id="gmail-custom-email-input"
+                    id="signup-email-input"
                     type="email"
                     required
-                    value={customEmail}
-                    onChange={(e) => {
-                      setCustomEmail(e.target.value);
-                      setError('');
-                    }}
-                    placeholder="e.g. yourname@gmail.com"
-                    className="w-full pl-9 pr-4 py-2 text-sm text-white rounded-lg glass-input"
+                    disabled={loading}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="username@gmail.com"
+                    className="w-full pl-9 pr-4 py-2.5 text-xs text-white bg-black/40 border border-white/10 rounded-xl focus:border-white/30 focus:outline-none transition-colors"
                   />
                 </div>
-                {error && <p id="gmail-error-text" className="mt-1.5 text-xs text-red-400">{error}</p>}
               </div>
 
-              <div className="pt-2 flex gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  Phone Number *
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
+                    <Phone className="w-4 h-4" />
+                  </span>
+                  <input
+                    id="signup-phone-input"
+                    type="tel"
+                    required
+                    disabled={loading}
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="10-digit number"
+                    className="w-full pl-9 pr-4 py-2.5 text-xs text-white bg-black/40 border border-white/10 rounded-xl focus:border-white/30 focus:outline-none transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  Password (6+ chars) *
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
+                    <Lock className="w-4 h-4" />
+                  </span>
+                  <input
+                    id="signup-password-input"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    disabled={loading}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-10 py-2.5 text-xs text-white bg-black/40 border border-white/10 rounded-xl focus:border-white/30 focus:outline-none transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-neutral-500 hover:text-white transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  Confirm Password *
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
+                    <Lock className="w-4 h-4" />
+                  </span>
+                  <input
+                    id="signup-confirm-password-input"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    disabled={loading}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-10 py-2.5 text-xs text-white bg-black/40 border border-white/10 rounded-xl focus:border-white/30 focus:outline-none transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
                 <button
-                  id="custom-gmail-back"
-                  type="button"
-                  onClick={() => setStep('select')}
-                  className="flex-1 py-2 text-xs font-medium rounded-lg glass-button-secondary"
-                >
-                  Back
-                </button>
-                <button
-                  id="custom-gmail-submit"
+                  id="signup-submit-btn"
                   type="submit"
-                  className="flex-1 py-2 text-xs font-medium rounded-lg glass-button-primary bg-white text-black hover:bg-neutral-200"
+                  disabled={loading}
+                  className="w-full py-3 bg-white text-black font-bold uppercase tracking-widest text-xs rounded-xl hover:bg-neutral-200 active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  Authenticate
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Generating Secure Profile...
+                    </>
+                  ) : (
+                    'Establish Membership'
+                  )}
                 </button>
               </div>
             </form>
           )}
 
-          {step === 'authorizing' && (
-            <div id="gmail-authorizing-loading" className="py-8 flex flex-col items-center justify-center text-center">
-              <div className="relative flex items-center justify-center mb-4">
-                <RefreshCw className="w-10 h-10 text-white animate-spin" />
-                <div className="absolute inset-0 rounded-full blur-[10px] bg-white/20 animate-pulse"></div>
-              </div>
-              <h4 className="text-sm font-medium text-white mb-1">Synchronizing Google Accounts</h4>
-              <p className="text-xs text-neutral-400 max-w-[240px]">Creating a secure session, establishing encrypted wallet token...</p>
-              
-              <div className="w-full max-w-[200px] bg-white/10 h-1 rounded-full overflow-hidden mt-6">
-                <div className="bg-white h-full animate-[loading_1.5s_ease-out_infinite]" style={{ width: '60%' }}></div>
-              </div>
-            </div>
-          )}
+          {/* Bottom links */}
+          <div className="flex items-center justify-between pt-5 mt-5 border-t border-white/5 text-[10px] text-neutral-500">
+            <span className="flex items-center">
+              <Shield className="w-3 h-3 mr-1" />
+              Secure SHA-256 Auth
+            </span>
+            <button
+              id="auth-cancel-btn"
+              type="button"
+              onClick={onClose}
+              className="hover:underline hover:text-neutral-300 transition-colors"
+            >
+              Cancel Connection
+            </button>
+          </div>
 
         </div>
       </div>

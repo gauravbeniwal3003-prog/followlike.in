@@ -5,6 +5,7 @@ export interface UserSession {
   balance: number;
   apiKey?: string;
   isAdmin?: boolean;
+  phone?: string;
 }
 
 export interface Coupon {

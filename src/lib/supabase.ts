@@ -15,7 +15,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
  *   email TEXT PRIMARY KEY,
  *   name TEXT NOT NULL,
  *   picture TEXT,
- *   balance NUMERIC DEFAULT 10000.00, -- Default INR balance (e.g., ₹10,000)
+ *   balance NUMERIC DEFAULT 0.00, -- Default INR balance
  *   api_key TEXT,
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
  * );
@@ -49,12 +49,18 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
  */
 
 export const DATABASE_SQL_INSTRUCTIONS = `
--- 1. Profiles Table (Added is_admin field)
+-- MIGRATION STAGE: Run this to update your existing profiles table for email/phone signup and password hash
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT UNIQUE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
+-- 1. Profiles Table (Complete schema with phone & password_hash)
 CREATE TABLE IF NOT EXISTS public.profiles (
   email TEXT PRIMARY KEY,
+  phone TEXT UNIQUE,
+  password_hash TEXT,
   name TEXT NOT NULL,
   picture TEXT,
-  balance NUMERIC DEFAULT 10000.00, -- Default ₹10,000 INR
+  balance NUMERIC DEFAULT 0.00, -- Default ₹0 INR
   api_key TEXT,
   is_admin BOOLEAN DEFAULT false NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -138,7 +144,7 @@ export async function syncUserProfile(email: string, name: string): Promise<User
     }
 
     // Create profile
-    const initialBalance = 10000.00; // INR 10,000 default balance
+    const initialBalance = 0; // INR 0 default balance
     const apiKey = 'smm_KEY' + Math.random().toString(36).substring(2, 12).toUpperCase();
     const pic = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=000000&color=ffffff`;
     const isAdmin = automatedAdmin;
@@ -173,7 +179,7 @@ export async function syncUserProfile(email: string, name: string): Promise<User
       email,
       name,
       picture: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=000000&color=ffffff`,
-      balance: 10000.00,
+      balance: 0,
       apiKey: 'smm_KEYLOCAL_OFFLINE',
       isAdmin: automatedAdmin
     };
