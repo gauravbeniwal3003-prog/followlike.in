@@ -8,6 +8,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_at timestamp with time zone default now()
 );
 
+-- MIGRATION: Run these ALTER statements in your Supabase SQL Editor if you already created the profiles table previously.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone text unique;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS password_hash text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS picture text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS api_key text;
+
 CREATE TABLE IF NOT EXISTS public.admin_users (
   id uuid primary key default gen_random_uuid(),
   username text unique not null,

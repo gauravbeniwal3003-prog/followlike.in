@@ -1,3 +1,4 @@
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 import React, { useState, useEffect } from 'react';
 import { UserSession, SMMService } from '../types';
 import { 
@@ -46,7 +47,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
     e.preventDefault();
     setAuthError('');
     try {
-      const res = await fetch('/api/smm/admin/login', {
+      const res = await fetch(`${API_BASE}/api/smm/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: authUsername, password: authPassword })
@@ -79,22 +80,22 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
     fetchProviderBalance();
     
     // Also fetch the standard services list to have the catalog
-    fetch('/api/smm/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }})
+    fetch(`${API_BASE}/api/smm/services`, { method: 'POST', headers: { 'Content-Type': 'application/json' }})
       .then(r => r.json())
       .then(d => { if (d.success) setAllServices(d.services || []) });
   }, [isAdminAuthenticated]);
 
-  const fetchDashboard = () => fetch('/api/smm/admin/dashboard').then(r => r.json()).then(d => { if (d.success) setDashboardStats(d.stats) });
-  const fetchUsers = () => fetch('/api/smm/admin/users').then(r => r.json()).then(d => { if (d.success) setUsers(d.users) });
-  const fetchTransactions = () => fetch('/api/smm/admin/transactions').then(r => r.json()).then(d => { if(d.success) setTransactions(d.transactions || []) });
-  const fetchProviderBalance = () => fetch('/api/smm/admin/provider-balance').then(r => r.json()).then(d => { if(d.success) setProviderBalance({ balance: d.balance, currency: d.currency }) });
-  const fetchCategories = () => fetch('/api/smm/admin/categories').then(r => r.json()).then(d => { 
+  const fetchDashboard = () => fetch(`${API_BASE}/api/smm/admin/dashboard`).then(r => r.json()).then(d => { if (d.success) setDashboardStats(d.stats) });
+  const fetchUsers = () => fetch(`${API_BASE}/api/smm/admin/users`).then(r => r.json()).then(d => { if (d.success) setUsers(d.users) });
+  const fetchTransactions = () => fetch(`${API_BASE}/api/smm/admin/transactions`).then(r => r.json()).then(d => { if(d.success) setTransactions(d.transactions || []) });
+  const fetchProviderBalance = () => fetch(`${API_BASE}/api/smm/admin/provider-balance`).then(r => r.json()).then(d => { if(d.success) setProviderBalance({ balance: d.balance, currency: d.currency }) });
+  const fetchCategories = () => fetch(`${API_BASE}/api/smm/admin/categories`).then(r => r.json()).then(d => { 
     if(d.success) {
       setCategoryOverrides(d.categoryOverrides || {});
       setAdminCategories(d.categories || []);
     }
   });
-  const fetchServices = () => fetch('/api/smm/admin/services').then(r => r.json()).then(d => { 
+  const fetchServices = () => fetch(`${API_BASE}/api/smm/admin/services`).then(r => r.json()).then(d => { 
     if(d.success) {
       setServiceOverrides(d.serviceOverrides || {});
       setAdminServices(d.services || []);
@@ -219,7 +220,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
             onClick={() => {
               if (confirm('Regular sync will update all active services from the provider. Continue?')) {
                 setIsSyncing(true);
-                fetch('/api/smm/admin/services/sync', { 
+                fetch(`${API_BASE}/api/smm/admin/services/sync`, { 
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' }
                 })
@@ -249,7 +250,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
             onClick={() => {
               if (confirm('WARNING: Force sync will delete all categories and services and re-fetch them from scratch. Proceed?')) {
                 setIsSyncing(true);
-                fetch('/api/smm/admin/services/sync', { 
+                fetch(`${API_BASE}/api/smm/admin/services/sync`, { 
                   method: 'POST', 
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ force_reset: true })
@@ -346,7 +347,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                       onClick={() => {
                         const newBal = prompt('Enter new balance:', u.balance.toString());
                         if (newBal && !isNaN(parseFloat(newBal))) {
-                          fetch('/api/smm/admin/users/update-balance', {
+                          fetch(`${API_BASE}/api/smm/admin/users/update-balance`, {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({ email: u.email, balance: parseFloat(newBal) })
                           }).then(() => fetchUsers());
@@ -358,7 +359,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                     </button>
                     <button 
                       onClick={() => {
-                        fetch('/api/smm/admin/users/toggle-ban', {
+                        fetch(`${API_BASE}/api/smm/admin/users/toggle-ban`, {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
                           body: JSON.stringify({ email: u.email, is_banned: u.status !== 'banned' })
                         }).then(() => fetchUsers());
@@ -389,7 +390,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
 
   const renderMargin = () => {
     const handleSaveGlobal = () => {
-      fetch('/api/smm/settings/update', {
+      fetch(`${API_BASE}/api/smm/settings/update`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ 
           profit_markup_percent: globalMargin, 
@@ -467,6 +468,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
               <tr className="bg-black/40 text-neutral-500 uppercase tracking-wider text-[9px]">
                 <th className="p-4">Category Name</th>
                 <th className="p-4 text-center">Status</th>
+                <th className="p-4 text-center">Sort Order</th>
                 <th className="p-4 text-right">Custom Margin %</th>
                 <th className="p-4 text-right">Configuration</th>
               </tr>
@@ -474,7 +476,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
             <tbody className="divide-y divide-white/5">
               {adminCategories.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-neutral-500">No categories found. Performance a sync if empty.</td>
+                  <td colSpan={5} className="p-8 text-center text-neutral-500">No categories found. Performance a sync if empty.</td>
                 </tr>
               )}
               {adminCategories.map(catItem => {
@@ -488,6 +490,9 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                         {!isActive ? 'Disabled' : 'Active'}
                       </span>
                     </td>
+                    <td className="p-4 text-center text-white">
+                      {catItem.sort_order ?? 'N/A'}
+                    </td>
                     <td className="p-4 text-right text-emerald-400">
                       {catItem.custom_margin !== null && catItem.custom_margin !== undefined ? `+${catItem.custom_margin}%` : 'Use Global'}
                     </td>
@@ -496,12 +501,15 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                         onClick={() => {
                           const n = prompt('Display Name:', catItem.custom_name || cat);
                           const m = prompt('Custom Margin % (leave blank to clear):', catItem.custom_margin?.toString() || '');
-                          fetch('/api/smm/admin/categories/update', {
+                          const s = prompt('Sort Order:', catItem.sort_order?.toString() || '0');
+                          const parsedS = s !== null ? parseInt(s) : null;
+                          fetch(`${API_BASE}/api/smm/admin/categories/update`, {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({ 
                               name: cat, 
                               custom_name: n || null, 
-                              custom_margin: m ? parseFloat(m) : null 
+                              custom_margin: m ? parseFloat(m) : null,
+                              sort_order: parsedS !== null && !isNaN(parsedS) ? parsedS : null
                             })
                           }).then(() => fetchCategories());
                         }}
@@ -511,7 +519,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                       </button>
                       <button 
                         onClick={() => {
-                          fetch('/api/smm/admin/categories/update', {
+                          fetch(`${API_BASE}/api/smm/admin/categories/update`, {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({ name: cat, is_active: !isActive })
                           }).then(() => fetchCategories());
@@ -573,7 +581,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                         const n = prompt('Override Name:', srv.custom_name || srv.api_name);
                         const d = prompt('Override Description:', srv.custom_description || '');
                         const m = prompt('Custom Margin % (leave blank to inherit):', srv.custom_margin?.toString() || '');
-                        fetch('/api/smm/admin/services/update', {
+                        fetch(`${API_BASE}/api/smm/admin/services/update`, {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
                           body: JSON.stringify({ 
                             service_id: srv.service_id, 
@@ -589,7 +597,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                     </button>
                     <button 
                       onClick={() => {
-                        fetch('/api/smm/admin/services/update', {
+                        fetch(`${API_BASE}/api/smm/admin/services/update`, {
                           method: 'POST', headers: {'Content-Type': 'application/json'},
                           body: JSON.stringify({ service_id: srv.service_id, is_active: !isActive })
                         }).then(() => fetchServices());

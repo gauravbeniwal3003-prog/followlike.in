@@ -1,3 +1,4 @@
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -209,28 +210,28 @@ export default function Dashboard({
     setAdminLoading(true);
     try {
       // Fetch users
-      const usersRes = await fetch('/api/smm/admin/users');
+      const usersRes = await fetch(`${API_BASE}/api/smm/admin/users`);
       const usersData = await usersRes.json();
       if (usersData && usersData.success) {
         setAdminUsers(usersData.users);
       }
 
       // Fetch coupons
-      const couponsRes = await fetch('/api/smm/coupons');
+      const couponsRes = await fetch(`${API_BASE}/api/smm/coupons`);
       const couponsData = await couponsRes.json();
       if (couponsData && couponsData.success) {
         setAdminCoupons(couponsData.coupons);
       }
 
       // Fetch transactions
-      const txRes = await fetch('/api/smm/admin/transactions');
+      const txRes = await fetch(`${API_BASE}/api/smm/admin/transactions`);
       const txData = await txRes.json();
       if (txData && txData.success) {
         setAdminTransactions(txData.transactions);
       }
 
       // Fetch orders
-      const ordersRes = await fetch('/api/smm/admin/orders');
+      const ordersRes = await fetch(`${API_BASE}/api/smm/admin/orders`);
       const ordersData = await ordersRes.json();
       if (ordersData && ordersData.success) {
         setAdminOrders(ordersData.orders);
@@ -252,7 +253,7 @@ export default function Dashboard({
     const amount = parseFloat(amountStr);
     if (isNaN(amount)) return;
     try {
-      const res = await fetch('/api/smm/admin/users/update-balance', {
+      const res = await fetch(`${API_BASE}/api/smm/admin/users/update-balance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, balance: amount })
@@ -273,7 +274,7 @@ export default function Dashboard({
   const handleToggleAdminStatus = async (email: string, currentVal: boolean) => {
     const newVal = !currentVal;
     try {
-      const res = await fetch('/api/smm/admin/users/toggle-admin', {
+      const res = await fetch(`${API_BASE}/api/smm/admin/users/toggle-admin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, is_admin: newVal })
@@ -291,7 +292,7 @@ export default function Dashboard({
     e.preventDefault();
     if (!newCouponCode.trim()) return;
     try {
-      const res = await fetch('/api/smm/coupons/create', {
+      const res = await fetch(`${API_BASE}/api/smm/coupons/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -313,7 +314,7 @@ export default function Dashboard({
 
   const handleDeleteCoupon = async (code: string) => {
     try {
-      const res = await fetch('/api/smm/coupons/delete', {
+      const res = await fetch(`${API_BASE}/api/smm/coupons/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code })
@@ -331,7 +332,7 @@ export default function Dashboard({
     e.preventDefault();
     setSettingsStatus('Saving settings update...');
     try {
-      const res = await fetch('/api/smm/settings/update', {
+      const res = await fetch(`${API_BASE}/api/smm/settings/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -429,7 +430,7 @@ export default function Dashboard({
     }
 
     try {
-      const response = await fetch('/api/smm/status-sync', {
+      const response = await fetch(`${API_BASE}/api/smm/status-sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orders: targetOrders })
@@ -628,7 +629,7 @@ export default function Dashboard({
     setOrderNotification({ type: 'success', text: 'Routing order automatically to provider API...' });
 
     try {
-      const res = await fetch('/api/smm/order', {
+      const res = await fetch(`${API_BASE}/api/smm/order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -721,7 +722,7 @@ export default function Dashboard({
     }
     setCouponValidationNotice('Validating coupon...');
     try {
-      const res = await fetch('/api/smm/coupons/apply', {
+      const res = await fetch(`${API_BASE}/api/smm/coupons/apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: couponCode, email: session.email })
@@ -2212,7 +2213,7 @@ export default function Dashboard({
                               onClick={() => {
                                 if (confirm('FORCE RESET will delete and re-import all services. Continue?')) {
                                   // Call the admin sync endpoint directly for force reset
-                                  fetch('/api/smm/admin/services/sync', {
+                                  fetch(`${API_BASE}/api/smm/admin/services/sync`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ force_reset: true })

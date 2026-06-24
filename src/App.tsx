@@ -1,3 +1,4 @@
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import LandingPage from './components/LandingPage';
@@ -28,7 +29,7 @@ export default function App() {
 
   // Fetch dynamic settings from server
   const fetchSettings = () => {
-    fetch('/api/smm/settings')
+    fetch(`${API_BASE}/api/smm/settings`)
       .then(res => res.json())
       .then(data => {
         if (data && data.success && data.settings) {
@@ -42,7 +43,7 @@ export default function App() {
 
   // Fetch live SMM services from our backend API proxy on boot
   useEffect(() => {
-    fetch('/api/smm/services', {
+    fetch(`${API_BASE}/api/smm/services`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })
@@ -88,7 +89,7 @@ export default function App() {
     setRefreshing(true);
     console.log(`[Services] Fetching catalog (forceSync: ${forceSync})`);
     try {
-      const res = await fetch('/api/smm/services', {
+      const res = await fetch(`${API_BASE}/api/smm/services`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ force_sync: forceSync })

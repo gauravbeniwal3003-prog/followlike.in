@@ -1,3 +1,4 @@
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 import React, { useState, useEffect } from 'react';
 import { Mail, Phone, Lock, Eye, EyeOff, Shield, User, RefreshCw, CheckCircle } from 'lucide-react';
 import { UserSession } from '../types';
@@ -55,7 +56,7 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
 
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/signin', {
+      const response = await fetch(`${API_BASE}/api/auth/signin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -115,7 +116,7 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
 
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

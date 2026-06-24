@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import dotenv from "dotenv";
+import cors from "cors";
 
 dotenv.config();
 
@@ -57,6 +58,7 @@ async function loadServerSettings() {
 loadServerSettings();
 
 const app = express();
+app.use(cors({ origin: true, credentials: true }));
 const PORT = 3000;
 
 app.use(express.json());
@@ -123,7 +125,10 @@ async function getApiCategorySortMap(): Promise<Map<string, number>> {
         const catName = catItem.name || catItem.category;
         if (catName) {
           let order = idx;
-          if (catItem.sort !== undefined && catItem.sort !== null) {
+          if (catItem.sortOrder !== undefined && catItem.sortOrder !== null) {
+            const parsed = parseInt(catItem.sortOrder);
+            if (!isNaN(parsed)) order = parsed;
+          } else if (catItem.sort !== undefined && catItem.sort !== null) {
             const parsed = parseInt(catItem.sort);
             if (!isNaN(parsed)) order = parsed;
           } else if (
