@@ -6,13 +6,14 @@ import {
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
-export default function AdminPanel({ session, globalSettings, onUpdateSettings }: any) {
+export default function AdminPanel({ session, globalSettings, onUpdateSettings, refreshServices }: any) {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   
   // Dashboard Data
   const [dashboardStats, setDashboardStats] = useState<any>({});
@@ -217,32 +218,63 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
           <button 
             onClick={() => {
               if (confirm('Regular sync will update all active services from the provider. Continue?')) {
-                fetch('/api/smm/admin/services/sync', { method: 'POST' })
+                setIsSyncing(true);
+                fetch('/api/smm/admin/services/sync', { 
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' }
+                })
                   .then(r => r.json())
-                  .then(d => { alert('Sync Complete'); fetchDashboard(); fetchServices(); fetchCategories(); })
-                  .catch(e => alert('Sync failed'));
+                  .then(d => { 
+                    if (d.success) {
+                      alert(`Sync Complete! ${d.count} services processed.`);
+                      fetchDashboard(); 
+                      fetchServices(); 
+                      fetchCategories();
+                      if (refreshServices) refreshServices(false);
+                    } else {
+                      alert('Sync Error: ' + (d.error || 'Unknown error'));
+                    }
+                  })
+                  .catch(e => alert('Sync failed connection.'))
+                  .finally(() => setIsSyncing(false));
               }
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-mono font-bold text-white transition-all uppercase"
+            disabled={isSyncing}
+            className={`flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-mono font-bold text-white transition-all uppercase ${isSyncing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}
           >
-            <RefreshCw className="w-3 h-3" /> Sync API Updates
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} /> 
+            {isSyncing ? 'Syncing...' : 'Sync API Updates'}
           </button>
           <button 
             onClick={() => {
               if (confirm('WARNING: Force sync will delete all categories and services and re-fetch them from scratch. Proceed?')) {
+                setIsSyncing(true);
                 fetch('/api/smm/admin/services/sync', { 
                   method: 'POST', 
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ force_reset: true })
                 })
                   .then(r => r.json())
-                  .then(d => { alert('Force Sync Complete'); fetchDashboard(); fetchServices(); fetchCategories(); })
-                  .catch(e => alert('Force sync failed'));
+                  .then(d => { 
+                    if (d.success) {
+                      alert(`Force Sync Complete! ${d.count} services re-imported.`);
+                      fetchDashboard(); 
+                      fetchServices(); 
+                      fetchCategories();
+                      if (refreshServices) refreshServices(true);
+                    } else {
+                      alert('Force Sync Error: ' + (d.error || 'Unknown error'));
+                    }
+                  })
+                  .catch(e => alert('Force sync failed connection.'))
+                  .finally(() => setIsSyncing(false));
               }
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-xl text-xs font-mono font-bold text-red-500 transition-all uppercase"
+            disabled={isSyncing}
+            className={`flex items-center gap-2 px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-xl text-xs font-mono font-bold text-red-500 transition-all uppercase ${isSyncing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-500/30'}`}
           >
-            <RefreshCw className="w-3 h-3" /> Force Reset Sync
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Processing...' : 'Force Reset Sync'}
           </button>
         </div>
       </div>
@@ -360,12 +392,20 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings }
       fetch('/api/smm/settings/update', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ 
-          settings: {
-            profit_markup_percent: globalMargin.toString(), 
-            landing_video_url: landingVideo 
-          }
+          profit_markup_percent: globalMargin, 
+          landing_video_url: landingVideo 
         })
-      }).then(() => alert('System settings saved!'));
+      }).then(r => r.json()).then(data => {
+        if (data.success) {
+          alert('System settings saved and prices synced!');
+          onUpdateSettings({
+            profit_markup_percent: globalMargin,
+            landing_video_url: landingVideo
+          });
+        } else {
+          alert('Save failed: ' + (data.error || 'Unknown error'));
+        }
+      });
     };
 
     return (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   User,
   DollarSign,
@@ -43,25 +44,94 @@ interface DashboardProps {
   session: UserSession;
   onLogout: () => void;
   servicesCatalog: SMMService[];
-  initialOrders: SMMOrder[];
   globalSettings: { landing_video_url: string; profit_markup_percent: number };
   onUpdateSettings: (newSett: { landing_video_url: string; profit_markup_percent: number }) => void;
   refreshServices: (forceSync?: boolean) => Promise<boolean>;
   refreshingServices: boolean;
 }
 
+const renderDescription = (desc: string) => {
+  if (!desc) return 'Fast and guaranteed delivery service. Speeds may vary slightly depending on current order traffic.';
+  
+  // Detect if description is HTML
+  const isHtml = /<[a-z][\s\S]*>/i.test(desc);
+  
+  if (isHtml) {
+    // Process HTML to clean up style attributes that clash with dark theme
+    let cleaned = desc
+      .replace(/color:\s*#[346][346][346]/gi, 'color: #d1d5db') // replace dark text with light gray
+      .replace(/color:\s*black/gi, 'color: #fff')
+      .replace(/background:\s*#[fF][cC][fF][cC][fF][cC]/gi, 'background: rgba(255,255,255,0.02)') // replace off-white background with subtle transparent dark
+      .replace(/background-color:\s*#[fF][cC][fF][cC][fF][cC]/gi, 'background-color: rgba(255,255,255,0.02)')
+      .replace(/border-bottom:\s*1px\s*solid\s*#eee/gi, 'border-bottom: 1px solid rgba(255,255,255,0.08)')
+      .replace(/border-right:\s*1px\s*solid\s*#eee/gi, 'border-right: 1px solid rgba(255,255,255,0.08)')
+      .replace(/border:\s*1px\s*solid\s*#eee/gi, 'border: 1px solid rgba(255,255,255,0.08)')
+      .replace(/color:\s*#333/gi, 'color: #f3f4f6')
+      .replace(/color:\s*#444/gi, 'color: #e5e7eb');
+
+    return (
+      <div 
+        className="smm-html-desc text-xs text-neutral-300 leading-normal"
+        dangerouslySetInnerHTML={{ __html: cleaned }}
+      />
+    );
+  }
+  
+  return <div className="whitespace-pre-wrap">{desc}</div>;
+};
+
 export default function Dashboard({
   session,
   onLogout,
   servicesCatalog,
-  initialOrders,
   globalSettings,
   onUpdateSettings,
   refreshServices,
   refreshingServices
 }: DashboardProps) {
   // Navigation Tabs state including 'admin'
-  const [activeTab, setActiveTab] = useState<'home' | 'new-order' | 'orders' | 'services' | 'funds' | 'profile' | 'support' | 'menu' | 'admin'>('home');
+  const [activeTab, _setActiveTab] = useState<'home' | 'new-order' | 'orders' | 'services' | 'funds' | 'profile' | 'support' | 'menu' | 'admin'>('home');
+  
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const setActiveTab = (tab: 'home' | 'new-order' | 'orders' | 'services' | 'funds' | 'profile' | 'support' | 'menu' | 'admin') => {
+    setIsMobileMenuOpen(false);
+    if (tab === 'menu' || tab === 'admin') {
+      _setActiveTab(tab);
+    } else {
+      navigate('/' + tab);
+    }
+  };
+
+  // Sync activeTab with pathname on mount and pathname change
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === '/home') {
+      _setActiveTab('home');
+    } else if (path === '/new-order') {
+      _setActiveTab('new-order');
+    } else if (path === '/orders') {
+      _setActiveTab('orders');
+    } else if (path === '/services') {
+      _setActiveTab('services');
+    } else if (path === '/funds') {
+      _setActiveTab('funds');
+    } else if (path === '/profile') {
+      _setActiveTab('profile');
+    } else if (path === '/support') {
+      _setActiveTab('support');
+    } else if (path === '/admin') {
+      _setActiveTab('admin');
+    } else if (path === '/') {
+      _setActiveTab('home');
+    }
+  }, [location.pathname]);
+
+  // Scroll to top whenever pathname or activeTab changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [location.pathname, activeTab]);
   
   // Mobile Sidebar switcher state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -82,7 +152,8 @@ export default function Dashboard({
 
   // Input states
   // 1. New Order Form
-  const [selectedCategory, setSelectedCategory] = useState<string>('Instagram');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('');
   const [selectedServiceId, setSelectedServiceId] = useState<string>('');
   const [targetUrl, setTargetUrl] = useState<string>('');
   const [orderQuantity, setOrderQuantity] = useState<number>(1000);
@@ -308,45 +379,16 @@ export default function Dashboard({
 
       // 2. Fetch orders
       const dbOrders = await getDbOrders(session.email);
-      if (dbOrders && dbOrders.length > 0) {
-        setOrders(dbOrders);
-        localStorage.setItem(`orders_${session.email}`, JSON.stringify(dbOrders));
-      } else {
-        // Fallback or seed initial orders if first time
-        const savedOrders = localStorage.getItem(`orders_${session.email}`);
-        if (savedOrders) {
-          const parsed = JSON.parse(savedOrders);
-          setOrders(parsed);
-          // Sync existing to database
-          for (const ord of parsed) {
-            await createDbOrder(session.email, ord);
-          }
-        } else {
-          // Put INR adjusted initialOrders
-          const inrInitialOrders = initialOrders.map(o => ({
-            ...o,
-            charge: Math.round(o.charge * 80)
-          }));
-          setOrders(inrInitialOrders);
-          localStorage.setItem(`orders_${session.email}`, JSON.stringify(inrInitialOrders));
-          for (const ord of inrInitialOrders) {
-            await createDbOrder(session.email, ord);
-          }
-        }
-      }
+      setOrders(dbOrders || []);
 
       // 3. Fetch transactions
       const dbTx = await getDbTransactions(session.email);
-      setTransactions(dbTx);
+      setTransactions(dbTx || []);
     } catch (err: any) {
-      console.error('Supabase fetch failed, falling back to local simulation:', err);
+      console.error('Supabase fetch failed:', err);
       setDbError(err?.message || 'Database synchronization offline');
-      
-      const savedOrders = localStorage.getItem(`orders_${session.email}`);
-      setOrders(savedOrders ? JSON.parse(savedOrders) : initialOrders);
-
-      const savedBalance = localStorage.getItem(`balance_${session.email}`);
-      setCurrentBalance(savedBalance ? parseFloat(savedBalance) : session.balance);
+      setOrders([]);
+      setTransactions([]);
     } finally {
       setLoadingDb(false);
     }
@@ -356,15 +398,13 @@ export default function Dashboard({
     loadSupabaseData();
   }, [session.email]);
 
-  // Persist states to both database and offline cache
+  // Persist states to database
   const saveOrdersToStorage = async (newOrders: SMMOrder[]) => {
     setOrders(newOrders);
-    localStorage.setItem(`orders_${session.email}`, JSON.stringify(newOrders));
   };
 
   const saveBalanceToStorage = async (newBal: number) => {
     setCurrentBalance(newBal);
-    localStorage.setItem(`balance_${session.email}`, newBal.toString());
     await updateDbBalance(session.email, newBal);
   };
 
@@ -494,29 +534,55 @@ export default function Dashboard({
     }
   }, [orders]);
 
-  // Get unique categories for menus, prioritizing key platforms
+  // Get unique categories for menus, sorted by database categorySortOrder
   const categories = (() => {
-    const rawCats = Array.from(new Set(servicesCatalog.map(s => s.category)));
-    const priority = ['Instagram', 'YouTube', 'Twitter', 'TikTok'];
-    return [...rawCats].sort((a, b) => {
-      const idxA = priority.findIndex(p => a.toLowerCase().includes(p.toLowerCase()));
-      const idxB = priority.findIndex(p => b.toLowerCase().includes(p.toLowerCase()));
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return a.localeCompare(b);
+    const catMap = new Map<string, number>();
+    servicesCatalog.forEach(s => {
+      const order = s.categorySortOrder !== undefined && s.categorySortOrder !== null ? s.categorySortOrder : 99999;
+      if (!catMap.has(s.category) || order < catMap.get(s.category)!) {
+        catMap.set(s.category, order);
+      }
     });
+    
+    return Array.from(catMap.entries())
+      .sort((a, b) => {
+        if (a[1] !== b[1]) {
+          return a[1] - b[1];
+        }
+        return a[0].localeCompare(b[0]);
+      })
+      .map(entry => entry[0]);
   })();
+
+  // Filter categories based on selectedPlatform
+  const filteredCategories = (() => {
+    if (!selectedPlatform) return categories;
+    return categories.filter(cat => 
+      cat.toLowerCase().includes(selectedPlatform.toLowerCase())
+    );
+  })();
+
+  // Set default selected category once catalog is loaded or platform filter changes
+  useEffect(() => {
+    if (servicesCatalog.length > 0 && filteredCategories.length > 0) {
+      if (!filteredCategories.includes(selectedCategory)) {
+        setSelectedCategory(filteredCategories[0]);
+      }
+    }
+  }, [servicesCatalog, filteredCategories]);
 
   // Filter service selections based on selected Category in New Order Form
   const filteredServicesForOrder = servicesCatalog.filter(s => s.category === selectedCategory);
 
-  // Set default selected service ID when category changes
   useEffect(() => {
     if (filteredServicesForOrder.length > 0) {
-      setSelectedServiceId(filteredServicesForOrder[0].id);
+      if (!filteredServicesForOrder.find(s => s.id === selectedServiceId)) {
+        setSelectedServiceId(filteredServicesForOrder[0].id);
+      }
+    } else {
+      setSelectedServiceId('');
     }
-  }, [selectedCategory]);
+  }, [selectedCategory, filteredServicesForOrder]);
 
   // Recalculate cost when Service or Quantity changes
   useEffect(() => {
@@ -790,8 +856,8 @@ export default function Dashboard({
                   <span className="text-sm font-semibold select-none leading-none">▲</span>
                 </div>
                 <div className="flex flex-col leading-none select-none">
-                  <span className="text-xs sm:text-sm font-black text-white uppercase tracking-wider font-mono">SOCIAL UP</span>
-                  <span className="text-[7px] text-neutral-500 font-bold uppercase tracking-widest font-mono">HUB</span>
+                  <span className="text-xs sm:text-sm font-black text-white uppercase tracking-wider font-mono">FOLLOWLIKE</span>
+                  <span className="text-[7px] text-neutral-500 font-bold uppercase tracking-widest font-mono">EVERYWHERE</span>
                 </div>
               </div>
               <span className="hidden lg:inline-flex px-2 py-0.5 rounded-full border border-white/15 bg-white/[0.04] text-[9px] uppercase font-mono tracking-wider text-neutral-400">
@@ -852,7 +918,7 @@ export default function Dashboard({
               }`}
             >
               <Globe className="w-4 h-4 mr-3" />
-              Home Panel Dashboard
+              Dashboard
             </button>
 
             <button
@@ -863,7 +929,7 @@ export default function Dashboard({
               }`}
             >
               <PlusCircle className="w-4 h-4 mr-3" />
-              New Order Form
+              New Order
             </button>
 
             <button
@@ -874,7 +940,7 @@ export default function Dashboard({
               }`}
             >
               <Clock className="w-4 h-4 mr-3" />
-              Order Placements
+              Orders
               {orders.filter(o => o.status === 'In Progress' || o.status === 'Pending').length > 0 && (
                 <span className="ml-auto px-1.5 py-0.5 rounded-full bg-white text-black font-mono text-[9px] font-bold">
                   {orders.filter(o => o.status === 'In Progress' || o.status === 'Pending').length}
@@ -890,7 +956,7 @@ export default function Dashboard({
               }`}
             >
               <Layers className="w-4 h-4 mr-3" />
-              Services & Rates Catalog
+              Services
             </button>
 
             <button
@@ -901,7 +967,7 @@ export default function Dashboard({
               }`}
             >
               <CreditCard className="w-4 h-4 mr-3" />
-              Add Funds / Wallet
+              Add Funds
             </button>
 
             <button
@@ -912,7 +978,7 @@ export default function Dashboard({
               }`}
             >
               <MessageSquare className="w-4 h-4 mr-3" />
-              WhatsApp Support
+              Support
             </button>
 
             <button
@@ -923,7 +989,7 @@ export default function Dashboard({
               }`}
             >
               <User className="w-4 h-4 mr-3" />
-              Account Settings
+              Settings
             </button>
 
             {(session.isAdmin || session.email === 'gauravbeniwal30003@gmail.com') && (
@@ -933,7 +999,7 @@ export default function Dashboard({
                 className={`w-full flex items-center px-4 py-3 text-xs font-semibold rounded-lg transition-all border border-white/5 bg-white/[0.01] hover:bg-white/[0.04] text-neutral-300`}
               >
                 <Shield className="w-4 h-4 mr-3" />
-                🛡️ Admin Control Panel
+                Admin
               </a>
             )}
           </div>
@@ -958,9 +1024,9 @@ export default function Dashboard({
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center space-x-2">
                     <div className="w-6 h-6 rounded bg-white flex items-center justify-center font-bold text-black text-xs">
-                      S
+                      F
                      </div>
-                    <span className="text-sm font-semibold text-white font-mono">SOCIAL UP HUB</span>
+                    <span className="text-sm font-semibold text-white font-mono">FOLLOWLIKE EVERYWHERE</span>
                   </div>
                   <button
                     onClick={() => setIsMobileMenuOpen(false)}
@@ -1038,9 +1104,9 @@ export default function Dashboard({
               
               {/* Promo Banner / Welcome indicator */}
               <div className="rounded-xl border border-white/10 bg-gradient-to-r from-neutral-900 to-black p-6">
-                <h2 className="text-xl font-semibold text-white tracking-tight">Namaste, {session.name}!</h2>
+                <h2 className="text-xl font-semibold text-white tracking-tight">Welcome, {session.name}!</h2>
                 <p className="text-xs text-neutral-400 mt-1">
-                  Manage your social media orders, check your account balance, and talk to customer support directly.
+                  Manage your social growth and support.
                 </p>
                 {dbError && (
                   <p className="mt-3 text-[10px] text-neutral-400 font-mono">
@@ -1052,15 +1118,15 @@ export default function Dashboard({
               {/* Bento Grid Metrics */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Available Balance</div>
+                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Balance</div>
                   <div className="text-2xl font-bold font-mono text-white">₹{currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                  <button onClick={() => setActiveTab('funds')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Add Funds →</button>
+                  <button onClick={() => setActiveTab('funds')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Add Funds</button>
                 </div>
 
                 <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Total Orders</div>
-                  <div className="text-2xl font-bold font-mono text-white">{orders.length} Placed</div>
-                  <button onClick={() => setActiveTab('orders')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">View Order History →</button>
+                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Orders</div>
+                  <div className="text-2xl font-bold font-mono text-white">{orders.length}</div>
+                  <button onClick={() => setActiveTab('orders')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">View All</button>
                 </div>
 
                 <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
@@ -1068,13 +1134,13 @@ export default function Dashboard({
                   <div className="text-2xl font-bold font-mono text-white">
                     ₹{orders.reduce((sum, o) => sum + o.charge, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </div>
-                  <button onClick={() => setActiveTab('services')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Browse Services →</button>
+                  <button onClick={() => setActiveTab('services')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Catalog</button>
                 </div>
 
                 <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Support Help</div>
-                  <div className="text-2xl font-bold font-mono text-white">WhatsApp</div>
-                  <a href="https://wa.me/919999999999" target="_blank" rel="noreferrer" className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Contact Support →</a>
+                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Support</div>
+                  <div className="text-2xl font-bold font-mono text-white">Help</div>
+                  <a href="https://wa.me/918168285559" target="_blank" rel="noreferrer" className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">WhatsApp</a>
                 </div>
               </div>
 
@@ -1158,16 +1224,14 @@ export default function Dashboard({
               <div className="rounded-2xl border border-white/10 bg-gradient-to-r from-neutral-900 via-neutral-950 to-neutral-900 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                   <h2 className="text-sm font-semibold text-white flex items-center gap-1.5 font-mono uppercase tracking-wider">
-                    <Zap className="w-4 h-4 text-white" />
                     ⚡ New Order
                   </h2>
                   <p className="text-xs text-neutral-400 mt-1 leading-normal">
-                    Select a service category, add your details, and place your order instantly.
+                    Select a service and place your order.
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-semibold bg-white/[0.04] p-2 border border-white/5 rounded-lg whitespace-nowrap">
-                  <TrendingUp className="w-3.5 h-3.5 text-white" />
-                  System Status: Online
+                  Online
                 </div>
               </div>
 
@@ -1177,20 +1241,27 @@ export default function Dashboard({
                   Quick Category Filters
                 </span>
                 <div className="flex flex-nowrap overflow-x-auto gap-2 pb-1 scrollbar-none">
-                  {categories.map((cat) => {
-                    const isActive = selectedCategory === cat;
+                  {['Instagram', 'YouTube', 'Twitter', 'TikTok', 'Facebook'].map((plat) => {
+                    const isActive = selectedPlatform.toLowerCase() === plat.toLowerCase();
                     return (
                       <button
-                        key={cat}
+                        key={plat}
                         type="button"
-                        onClick={() => setSelectedCategory(cat)}
+                        onClick={() => {
+                          if (selectedPlatform.toLowerCase() === plat.toLowerCase()) {
+                            // If clicking again, reset/deselect to show all categories
+                            setSelectedPlatform('');
+                          } else {
+                            setSelectedPlatform(plat);
+                          }
+                        }}
                         className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap border shrink-0 ${
                           isActive
-                            ? 'bg-white text-black border-white'
+                            ? 'bg-white text-black border-white font-black'
                             : 'bg-neutral-950 text-neutral-400 border-white/10 hover:text-white hover:bg-neutral-900'
                         }`}
                       >
-                        {cat}
+                        {plat}
                       </button>
                     );
                   })}
@@ -1231,7 +1302,8 @@ export default function Dashboard({
                       onChange={(e) => setSelectedCategory(e.target.value)}
                       className="w-full px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all"
                     >
-                      {categories.map(cat => (
+                      {filteredCategories.length === 0 && <option value="">Loading categories...</option>}
+                      {filteredCategories.map(cat => (
                         <option key={cat} value={cat}>
                           {cat} Services
                         </option>
@@ -1250,6 +1322,7 @@ export default function Dashboard({
                       onChange={(e) => setSelectedServiceId(e.target.value)}
                       className="w-full px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all leading-relaxed"
                     >
+                      {filteredServicesForOrder.length === 0 && <option value="">No services available for this category</option>}
                       {filteredServicesForOrder.map(service => (
                         <option key={service.id} value={service.id}>
                           {service.name} — ₹{getInrRate(service)}/1k
@@ -1257,9 +1330,8 @@ export default function Dashboard({
                       ))}
                     </select>
                     {/* Service Description display */}
-                    <div className="mt-2.5 p-3 rounded-lg bg-black/60 text-[10px] text-neutral-400 leading-relaxed font-sans border border-white/5 whitespace-pre-wrap">
-                      <span className="font-semibold text-white block mb-0.5">🚀 Service Details:</span>
-                      {servicesCatalog.find(s => s.id === selectedServiceId)?.description || 'Fast and guaranteed delivery service. Speeds may vary slightly depending on current order traffic.'}
+                    <div className="mt-2.5 p-3.5 rounded-xl bg-neutral-950/80 text-[11px] text-neutral-300 leading-relaxed font-sans border border-white/5 break-words">
+                      {renderDescription(servicesCatalog.find(s => s.id === selectedServiceId)?.description || '')}
                     </div>
                   </div>
 
@@ -1533,11 +1605,11 @@ export default function Dashboard({
                         {/* 3-column Grid stats matching Screenshot 1 */}
                         <div className="grid grid-cols-3 gap-2 border-t border-b border-white/[0.05] py-3.5 my-2.5 text-center">
                           <div>
-                            <div className="text-[9px] text-neutral-500 font-bold uppercase font-mono tracking-wider">Start Count</div>
+                            <div className="text-[9px] text-neutral-500 font-bold uppercase font-mono tracking-wider">Start</div>
                             <div className="text-xs font-mono font-extrabold text-neutral-300 mt-1">{getStartVal(order)}</div>
                           </div>
                           <div className="border-l border-r border-white/[0.05]">
-                            <div className="text-[9px] text-neutral-500 font-bold uppercase font-mono tracking-wider">Remaining</div>
+                            <div className="text-[9px] text-neutral-500 font-bold uppercase font-mono tracking-wider">Remains</div>
                             <div className="text-xs font-mono font-extrabold text-neutral-300 mt-1">{getRemainsVal(order)}</div>
                           </div>
                           <div>
@@ -1579,8 +1651,8 @@ export default function Dashboard({
               
               <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-white">Our Services & Pricing</h2>
-                  <p className="text-xs text-neutral-400 mt-0.5">Browse all available services, prices, and limits.</p>
+                  <h2 className="text-lg font-semibold text-white">Services</h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">Browse available services and rates.</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1646,7 +1718,9 @@ export default function Dashboard({
                         </div>
                         <h4 className="text-sm font-semibold text-white tracking-tight">{service.name}</h4>
                         {service.description && (
-                          <p className="text-xs text-neutral-400 max-w-2xl font-sans leading-normal whitespace-pre-wrap">{service.description}</p>
+                          <div className="max-w-2xl pt-1">
+                            {renderDescription(service.description)}
+                          </div>
                         )}
                         
                         <div className="flex flex-wrap gap-4 text-[10px] font-mono text-neutral-500 pt-1">
@@ -1678,7 +1752,7 @@ export default function Dashboard({
                   ))
                 ) : (
                   <div className="rounded-xl border border-dashed border-white/10 p-12 text-center text-neutral-500 font-mono text-xs">
-                    No services parameters index filtered.
+                    No services found matching your criteria.
                   </div>
                 )}
               </div>
@@ -1753,14 +1827,14 @@ export default function Dashboard({
                       />
                     </div>
                     <p className="mt-1.5 text-[10px] text-neutral-500 font-sans">
-                      Standard limits range from minimum ₹100.00 to maximum ₹100,000.00 per transaction.
+                      Limits: ₹100 - ₹100,000
                     </p>
                   </div>
 
                   {/* Coupon Code Block */}
                   <div className="p-4 rounded-xl border border-white/5 bg-white/[0.02] space-y-3">
                     <label className="block text-[10px] font-bold text-neutral-400 uppercase font-mono tracking-wider">
-                      Have an Add Funds Coupon / Bonus Code?
+                      Coupon Code
                     </label>
                     <div className="flex gap-2">
                       <input
@@ -1806,7 +1880,7 @@ export default function Dashboard({
                   {/* Supported Methods Subtext block matching Screenshot 3 bottom elements */}
                   <div className="pt-4 border-t border-white/5 space-y-3">
                     <div className="text-[10px] font-bold text-neutral-500 uppercase font-mono tracking-wider text-center">
-                      Supported Settlement Integrations
+                      Supported Methods
                     </div>
                     
                     <div className="grid grid-cols-3 gap-3 text-center">
@@ -1831,18 +1905,14 @@ export default function Dashboard({
                 <div className="md:col-span-5 rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4 text-xs font-sans">
                   
                   <h3 className="font-semibold text-white uppercase font-mono tracking-wider text-neutral-300 pb-2 border-b border-white/[0.06]">
-                    Billing Instructions
+                    Policy
                   </h3>
 
                   <div className="space-y-3 leading-relaxed text-neutral-400">
-                    <p>
-                      Deposits execute immediately and post directly to your user wallet account.
-                    </p>
-                    
                     <div className="p-3.5 rounded-xl bg-black text-[11px] border border-white/5 space-y-1.5">
-                      <span className="font-semibold text-white block">📌 Non-Refundable Agreement:</span>
+                      <span className="font-semibold text-white block">📌 Non-Refundable:</span>
                       <p className="leading-normal">
-                        As explicitly stipulated in SMM Nexus guidelines, our platform has a strict <span className="text-white font-bold underline">NO REFUND POLICY</span>. Once funds are deposited, they are irreversibly credited.
+                        Strict <span className="text-white font-bold underline">NO REFUND POLICY</span>. Once funds are deposited, they are irreversibly credited.
                       </p>
                     </div>
                   </div>
@@ -1859,8 +1929,8 @@ export default function Dashboard({
               
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-white">Direct WhatsApp Support</h2>
-                  <p className="text-xs text-neutral-400 mt-0.5">Need help with an order? Contact us directly on WhatsApp for instant assistance.</p>
+                  <h2 className="text-lg font-semibold text-white">Support</h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">Contact us on WhatsApp for help.</p>
                 </div>
               </div>
 
@@ -1875,9 +1945,9 @@ export default function Dashboard({
                   </div>
                   
                   <div>
-                    <h3 className="text-xl font-bold text-white uppercase tracking-wider font-mono">Live Support Hub</h3>
+                    <h3 className="text-xl font-bold text-white uppercase tracking-wider font-mono">WhatsApp</h3>
                     <p className="text-sm text-neutral-400 mt-2 leading-relaxed">
-                      Our interactive ticketing system has been deprecated in favor of faster, real-time communication.
+                      Fast, real-time communication via WhatsApp.
                     </p>
                   </div>
 
@@ -1896,7 +1966,7 @@ export default function Dashboard({
                   </a>
                   
                   <p className="text-[10px] text-neutral-500 uppercase font-mono tracking-widest">
-                    Authorized SMM Support Channel
+                    Support
                   </p>
                 </div>
               </div>
@@ -1927,11 +1997,11 @@ export default function Dashboard({
                   <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
                     <h2 className="text-lg font-semibold text-white tracking-tight">{session.name}</h2>
                     <span className="px-2 py-0.5 roundedbg-neutral-800 text-[9px] font-mono font-bold uppercase text-neutral-400 border border-white/5">
-                      Premium Partner
+                      Member
                     </span>
                   </div>
                   <p className="text-xs text-neutral-400 font-mono">{session.email}</p>
-                  <p className="text-[10px] text-neutral-500">Logged in with Google Account • Currency: INR</p>
+                  <p className="text-[10px] text-neutral-500">Google Login • INR</p>
                 </div>
               </div>
 
@@ -1971,13 +2041,13 @@ export default function Dashboard({
                 <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/5 rounded-full blur-[90px] -mr-20 -mt-20"></div>
                 <div className="relative z-10">
                   <span className="text-[9px] font-mono font-bold tracking-widest text-red-500 bg-red-500/10 px-2.5 py-1 rounded-md uppercase">
-                    Admin Security Authorization Active
+                    Admin Active
                   </span>
                   <h1 className="text-2xl sm:text-3xl font-display font-black text-white mt-3 uppercase tracking-tighter">
-                    Administrative Command Center
+                    Admin Panel
                   </h1>
                   <p className="text-xs text-neutral-400 mt-1 max-w-2xl leading-normal">
-                    Authorized console for Social Up Hub operations. Dynamically handle live catalogs, profit bounds, add-funds discounts, order sequences, and profiles.
+                    Manage users, settings, and orders.
                   </p>
                 </div>
               </div>
@@ -1985,19 +2055,19 @@ export default function Dashboard({
               {/* Bento Grid Stats */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="p-4 rounded-xl border border-white/5 bg-white/[0.01] space-y-1">
-                  <span className="text-[10px] font-mono text-neutral-500 uppercase">Registered profiles</span>
+                  <span className="text-[10px] font-mono text-neutral-500 uppercase">Users</span>
                   <p className="text-xl font-bold text-white font-mono">{adminUsers.length || 2}</p>
                 </div>
                 <div className="p-4 rounded-xl border border-white/5 bg-white/[0.01] space-y-1">
-                  <span className="text-[10px] font-mono text-neutral-500 uppercase">Live SMM Margin %</span>
+                  <span className="text-[10px] font-mono text-neutral-500 uppercase">Markup %</span>
                   <p className="text-xl font-bold text-white font-mono">{globalSettings.profit_markup_percent}%</p>
                 </div>
                 <div className="p-4 rounded-xl border border-white/5 bg-white/[0.01] space-y-1">
-                  <span className="text-[10px] font-mono text-neutral-500 uppercase">Active Coupon Codes</span>
+                  <span className="text-[10px] font-mono text-neutral-500 uppercase">Coupons</span>
                   <p className="text-xl font-bold text-white font-mono">{adminCoupons.length || 3}</p>
                 </div>
                 <div className="p-4 rounded-xl border border-white/5 bg-white/[0.01] space-y-1">
-                  <span className="text-[10px] font-mono text-neutral-500 uppercase">Network Orders Log</span>
+                  <span className="text-[10px] font-mono text-neutral-500 uppercase">Orders</span>
                   <p className="text-xl font-bold text-white font-mono">{adminOrders.length || orders.length}</p>
                 </div>
               </div>
@@ -2115,7 +2185,56 @@ export default function Dashboard({
 
                   {/* SUBTAB 2: TUNABLES (MARKUP & VIDEO) */}
                   {adminSubTab === 'settings' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-6">
+                      <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div>
+                            <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider text-red-500">Provider API Synchronization</h3>
+                            <p className="text-[10px] text-neutral-400 mt-1">Sync your services and categories directly with the SMM provider.</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                if (confirm('Sync all services from API?')) {
+                                  refreshServices(true).then(success => {
+                                    if (success) alert('Sync Complete');
+                                    else alert('Sync Failed');
+                                  });
+                                }
+                              }}
+                              disabled={refreshingServices}
+                              className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-mono font-bold text-white transition-all uppercase flex items-center gap-2"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${refreshingServices ? 'animate-spin' : ''}`} />
+                              {refreshingServices ? 'Syncing...' : 'Sync Services'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm('FORCE RESET will delete and re-import all services. Continue?')) {
+                                  // Call the admin sync endpoint directly for force reset
+                                  fetch('/api/smm/admin/services/sync', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ force_reset: true })
+                                  })
+                                  .then(r => r.json())
+                                  .then(d => {
+                                    if (d.success) { alert('Force Reset Successful'); refreshServices(false); }
+                                    else alert('Force Reset Failed: ' + d.error);
+                                  })
+                                  .catch(() => alert('Force Reset Connection Failed'));
+                                }
+                              }}
+                              className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-[10px] font-mono font-bold text-red-400 transition-all uppercase flex items-center gap-2"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Force Reset
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       
                       {/* Profit Markup controller */}
                       <form onSubmit={handleSaveSettings} className="rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-5">
@@ -2194,9 +2313,9 @@ export default function Dashboard({
                           Modify Global Exhibition Video
                         </button>
                       </form>
-
                     </div>
-                  )}
+                  </div>
+                )}
 
                   {/* SUBTAB 3: COUPONS ENGINE */}
                   {adminSubTab === 'coupons' && (
@@ -2577,7 +2696,7 @@ export default function Dashboard({
 
       {/* DASHBOARD BOTTOM FOOTER (Mini copyright) */}
       <footer className="mt-auto border-t border-white/[0.05] py-6 text-center text-[10px] text-neutral-500 font-mono">
-        <div>SOCIAL UP HUB • Safe & Secured Panel</div>
+        <div>FOLLOWLIKE EVERYWHERE • Safe & Secured Panel</div>
         <div className="mt-1">Handcrafted in complete compliance with Black & White aesthetics.</div>
       </footer>
     </div>

@@ -23,6 +23,7 @@ export interface GlobalSettings {
 export interface SMMService {
   id: string;
   category: string;
+  categorySortOrder?: number;
   name: string;
   ratePer1000: number; // in USD
   min: number;

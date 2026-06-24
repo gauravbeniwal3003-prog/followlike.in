@@ -113,7 +113,7 @@ export default function LandingPage({
           <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
             <span className="text-black font-black text-xs">SMM</span>
           </div>
-          <span className="text-xl font-display font-bold tracking-tighter uppercase">Social Up Hub</span>
+          <span className="text-xl font-display font-bold tracking-tighter uppercase">FollowLike Everywhere</span>
         </div>
         <div className="hidden md:flex gap-8 text-xs uppercase tracking-widest font-semibold text-neutral-400">
           <a href="#catalog" className="hover:text-white transition-colors">Services</a>
@@ -145,63 +145,57 @@ export default function LandingPage({
           <div className="flex flex-col gap-2">
             <span className="text-xs font-bold uppercase tracking-[0.3em] text-white/40 font-mono">The Future of Distribution</span>
             <h1 className="text-4xl sm:text-6xl font-display font-black leading-[1.0] tracking-tighter">
-              INSTANT <br/>
+              FAST & <br/>
               <span className="text-neutral-500 font-extrabold">SOCIAL</span> GROWTH.
             </h1>
-            <p className="text-neutral-400 text-xs sm:text-sm max-w-lg mt-2 leading-relaxed">
-              Experience Social Up Hub's Clean Minimalism edition. Establish high-retention audience delivery channels and organic global user engagement simulations securely.
+            <p className="text-neutral-400 text-xs sm:text-sm max-w-md mt-2 leading-relaxed">
+              Boost your social presence with fast, secure, and high-retention engagement solutions.
             </p>
           </div>
           
-          {/* YT Integration Video Mockup */}
-          <div className="relative aspect-video bg-neutral-950 rounded-3xl border border-white/10 flex flex-col justify-between overflow-hidden group shadow-2xl">
-            <div className="absolute inset-0 bg-neutral-950/20 pointer-events-none z-10 flex items-center justify-center"></div>
-            
-            {/* Real Youtube Video Iframe */}
-            <iframe
-              id="youtube-demo-player"
-              src={landingVideoUrl}
-              title="SMM Panel Interactive Video Guide"
-              className="absolute inset-0 w-full h-full border-0 z-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            ></iframe>
-
-            {/* Subtle Overlay Badge */}
-            <div className="absolute bottom-4 left-4 flex gap-2 z-20 pointer-events-none">
-              <span className="bg-black/85 px-3 py-1 rounded-md text-[10px] font-mono tracking-wider backdrop-blur-sm border border-white/10">
-                VIDEO GUIDE • PLAY TO DISCOVER
-              </span>
-            </div>
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button 
+              id="login-landing-hero"
+              onClick={() => setIsGmailModalOpen(true)}
+              className="px-6 py-3 bg-white text-black text-xs font-bold uppercase tracking-widest rounded-full hover:bg-neutral-200 transition-all"
+            >
+              Get Started
+            </button>
+            <a 
+              href="#catalog"
+              className="px-6 py-3 bg-white/5 border border-white/10 text-white text-xs font-bold uppercase tracking-widest rounded-full hover:bg-white/10 transition-all text-center"
+            >
+              View Services
+            </a>
           </div>
         </div>
 
         {/* Right 2/5 column: Features & High-contrast Speciality */}
         <div className="w-full lg:w-2/5 flex flex-col gap-4 justify-between">
           
-          {/* Why Choose Social Up Hub Box */}
+          {/* Why Choose FollowLike Everywhere Box */}
           <div className="bg-white/5 p-6 rounded-3xl border border-white/10 backdrop-blur-sm flex-1 flex flex-col justify-center">
-            <h3 className="text-xs font-bold font-mono uppercase tracking-[0.15em] text-white/50 mb-5">Why Choose Social Up Hub?</h3>
+            <h3 className="text-xs font-bold font-mono uppercase tracking-[0.15em] text-white/50 mb-5">Why Us?</h3>
             <div className="space-y-4">
               <div className="flex gap-4">
                 <div className="w-6 h-6 flex-shrink-0 bg-white/10 border border-white/10 rounded flex items-center justify-center text-[10px] font-mono">01</div>
                 <div>
-                  <p className="text-xs sm:text-sm font-bold text-white tracking-tight">Unmatched Speed</p>
-                  <p className="text-[11px] text-neutral-400 leading-snug">Orders processed and triggered in under 60 seconds.</p>
+                  <p className="text-xs sm:text-sm font-bold text-white tracking-tight">Instant Start</p>
+                  <p className="text-[11px] text-neutral-400 leading-snug">Automated delivery begins within minutes.</p>
                 </div>
               </div>
               <div className="flex gap-4">
                 <div className="w-6 h-6 flex-shrink-0 bg-white/10 border border-white/10 rounded flex items-center justify-center text-[10px] font-mono">02</div>
                 <div>
-                  <p className="text-xs sm:text-sm font-bold text-white tracking-tight">99% API Uptime</p>
-                  <p className="text-[11px] text-neutral-400 leading-snug">Fully integrated developer endpoints built for pro resellers.</p>
+                  <p className="text-xs sm:text-sm font-bold text-white tracking-tight">Safe & Secure</p>
+                  <p className="text-[11px] text-neutral-400 leading-snug">Simulated organic traffic ensures safety.</p>
                 </div>
               </div>
               <div className="flex gap-4">
                 <div className="w-6 h-6 flex-shrink-0 bg-white/10 border border-white/10 rounded flex items-center justify-center text-[10px] font-mono">03</div>
                 <div>
-                  <p className="text-xs sm:text-sm font-bold text-white tracking-tight">Lowest Market Rates</p>
-                  <p className="text-[11px] text-neutral-400 leading-snug">Direct pool providers with zero mid-channel commission.</p>
+                  <p className="text-xs sm:text-sm font-bold text-white tracking-tight">Best Rates</p>
+                  <p className="text-[11px] text-neutral-400 leading-snug">Direct provider rates with no middleman fees.</p>
                 </div>
               </div>
             </div>
@@ -275,9 +269,9 @@ export default function LandingPage({
             {/* side info */}
             <div className="lg:col-span-5 space-y-4">
               <span className="text-xs font-mono text-neutral-500 tracking-widest uppercase">Verified Benchmark</span>
-              <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-white/95">Why Social Up Hub Services Excel?</h2>
+              <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-white/95">Why FollowLike Everywhere?</h2>
               <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
-                Ordinary SMM providers rely on archaic bot scrapers that fail platform check updates within 24 hours. Our panel uses simulated premium viewer contexts across secure proxy grids, ensuring absolute safety for customer channels.
+                We use simulated viewer contexts across secure proxy grids, ensuring absolute safety for your channels.
               </p>
 
               <div className="space-y-2 pt-2 text-xs">
@@ -356,8 +350,8 @@ export default function LandingPage({
           <div className="space-y-3">
           {[
             {
-              q: 'What is Social Up Hub, and are these metrics verified?',
-              a: 'Social Up Hub is an advanced social media marketing interface that delivers custom engagement loops (views, follows, subscribers) to accounts. These actions are triggered via premium dedicated developer proxy grids to maintain absolute security.'
+              q: 'What is FollowLike Everywhere, and are these metrics verified?',
+              a: 'FollowLike Everywhere is an advanced social media marketing interface that delivers custom engagement loops (views, follows, subscribers) to accounts. These actions are triggered via premium dedicated developer proxy grids to maintain absolute security.'
             },
             {
               q: 'Can these services lead to page suspension?',
@@ -399,7 +393,7 @@ export default function LandingPage({
                 <div className="w-6 h-6 rounded bg-white flex items-center justify-center font-bold text-black text-xs">
                   S
                 </div>
-                <span className="text-base font-semibold tracking-tight uppercase">Social Up Hub</span>
+                <span className="text-base font-semibold tracking-tight uppercase">FollowLike Everywhere</span>
               </div>
               <p className="text-neutral-500 leading-relaxed font-sans max-w-sm">
                 Next-generation monochrome social booster application, empowering visual marketing experts since 2026. Handcrafted for maximum throughput.
@@ -413,11 +407,10 @@ export default function LandingPage({
             {/* Column 2 - Refund Policy (NO REFUND strictly requested by user) */}
             <div className="md:col-span-5 space-y-3">
               <h4 className="text-xs font-semibold tracking-widest text-white uppercase flex items-center">
-                <Info className="w-3.5 h-3.5 mr-1.5 text-white" />
-                Refund Policy
+                Refunds
               </h4>
               <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4 text-[11px] leading-relaxed text-neutral-400">
-                <span className="text-white font-semibold">⚠️ STRICT POLICY: NO REFUNDS.</span> All purchases, credits, and processed transactions on Social Up Hub are absolute, finalized, and completely non-refundable. Once an order propagation is queued to target URLs, the resources cannot be recalled under any situations. Ensure target coordinates and service categories are fully verified before ordering.
+                <span className="text-white font-semibold">STRICT: NO REFUNDS.</span> All transactions are final. Once an order is queued, it cannot be recalled.
               </div>
             </div>
 
@@ -427,9 +420,9 @@ export default function LandingPage({
               
               <ul className="space-y-2 text-[11px]">
                 <li>
-                  <a href="mailto:support@socialuphub.com" className="flex items-center hover:text-white transition-colors group">
+                  <a href="mailto:support@followlike.in" className="flex items-center hover:text-white transition-colors group">
                     <Mail className="w-3.5 h-3.5 mr-2 text-neutral-500 group-hover:text-white" />
-                    support@socialuphub.com
+                    support@followlike.in
                   </a>
                 </li>
                 <li>
@@ -465,7 +458,7 @@ export default function LandingPage({
           {/* Bottom Copyright */}
           <div className="pt-8 border-t border-white/[0.05] flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-neutral-500">
             <div>
-              © 2026 Social Up Hub Panel Corporation. All rights reserved.
+              © 2026 FollowLike Everywhere Panel Corporation. All rights reserved.
             </div>
             <div className="flex space-x-4">
               <span className="hover:text-white cursor-pointer" onClick={() => setIsGmailModalOpen(true)}>Terms of Service</span>

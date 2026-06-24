@@ -116,3 +116,72 @@ body {
   overflow-x: hidden;
 }
 
+/* Styling for Rich SMM Descriptions */
+.smm-html-desc table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 10px 0 !important;
+  font-size: 11px !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.smm-html-desc tr {
+  background: rgba(255, 255, 255, 0.02) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.smm-html-desc tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.smm-html-desc td, .smm-html-desc th {
+  padding: 6px 10px !important;
+  border: none !important;
+  color: #e5e7eb !important;
+}
+
+.smm-html-desc td:first-child {
+  font-weight: 600 !important;
+  color: #9ca3af !important;
+  width: 40% !important;
+}
+
+.smm-html-desc code {
+  display: block !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  padding: 6px 10px !important;
+  border-radius: 4px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 10px !important;
+  color: #f3f4f6 !important;
+  word-break: break-all !important;
+}
+
+.smm-html-desc ul {
+  padding-left: 14px !important;
+  margin: 8px 0 !important;
+  list-style-type: disc !important;
+}
+
+.smm-html-desc li {
+  margin-bottom: 6px !important;
+  color: #d1d5db !important;
+  font-size: 11px !important;
+}
+
+.smm-html-desc h1, .smm-html-desc h2, .smm-html-desc h3, .smm-html-desc h4 {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  margin: 12px 0 6px 0 !important;
+  color: #ffffff !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding-bottom: 4px !important;
+}
+
+.smm-html-desc p {
+  margin: 6px 0 !important;
+  font-size: 11px !important;
+  color: #d1d5db !important;
+}
+

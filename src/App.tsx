@@ -1,15 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import LandingPage from './components/LandingPage';
 import Dashboard from './components/Dashboard';
 import AdminPanel from './components/AdminPanel';
 import { UserSession, SMMService } from './types';
 import { INITIAL_SERVICES, INITIAL_ORDERS, INITIAL_TICKETS } from './data';
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [pathname]);
+
+  return null;
+}
+
 export default function App() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [services, setServices] = useState<SMMService[]>(INITIAL_SERVICES);
+  const [services, setServices] = useState<SMMService[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [globalSettings, setGlobalSettings] = useState({
     landing_video_url: '',
@@ -76,6 +86,7 @@ export default function App() {
 
   const refreshServices = async (forceSync = false) => {
     setRefreshing(true);
+    console.log(`[Services] Fetching catalog (forceSync: ${forceSync})`);
     try {
       const res = await fetch('/api/smm/services', {
         method: 'POST',
@@ -84,11 +95,14 @@ export default function App() {
       });
       const data = await res.json();
       if (data && data.success && Array.isArray(data.services)) {
+        console.log(`[Services] Successfully loaded ${data.services.length} services`);
         setServices(data.services);
         return true;
+      } else {
+        console.warn('[Services] API returned success:false or invalid data', data);
       }
     } catch (err) {
-      console.error('Failed to refresh services:', err);
+      console.error('[Services] Fetch error:', err);
     } finally {
       setRefreshing(false);
     }
@@ -104,7 +118,7 @@ export default function App() {
           </div>
         </div>
         <div className="text-xs font-mono text-neutral-500 uppercase tracking-widest animate-pulse">
-          Loading Social Up Hub...
+          Loading FollowLike Everywhere...
         </div>
       </div>
     );
@@ -112,6 +126,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Routes>
         <Route 
           path="/admin" 
@@ -120,6 +135,7 @@ export default function App() {
               session={session} 
               globalSettings={globalSettings} 
               onUpdateSettings={(newSet: any) => setGlobalSettings(newSet)} 
+              refreshServices={refreshServices}
             />
           } 
         />
@@ -131,7 +147,6 @@ export default function App() {
                 session={session}
                 onLogout={handleLogout}
                 servicesCatalog={services}
-                initialOrders={INITIAL_ORDERS}
                 globalSettings={globalSettings}
                 onUpdateSettings={(newSet) => setGlobalSettings(newSet)}
                 refreshServices={refreshServices}
@@ -148,6 +163,13 @@ export default function App() {
             )
           } 
         />
+        <Route path="/home" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
+        <Route path="/new-order" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
+        <Route path="/orders" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
+        <Route path="/services" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
+        <Route path="/funds" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
+        <Route path="/profile" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
+        <Route path="/support" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
