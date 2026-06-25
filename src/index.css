@@ -117,6 +117,16 @@ body {
 }
 
 /* Styling for Rich SMM Descriptions */
+.smm-html-desc {
+  color: #e5e7eb !important;
+}
+
+.smm-html-desc * {
+  background-color: transparent !important;
+  background: transparent !important;
+  color: inherit !important;
+}
+
 .smm-html-desc table {
   width: 100% !important;
   border-collapse: collapse !important;

@@ -24,7 +24,9 @@ export default function App() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [globalSettings, setGlobalSettings] = useState({
     landing_video_url: '',
-    profit_markup_percent: 15
+    profit_markup_percent: 15,
+    smm_api_key: '',
+    smm_api_url: ''
   });
 
   // Fetch dynamic settings from server

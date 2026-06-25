@@ -60,15 +60,12 @@ const renderDescription = (desc: string) => {
   if (isHtml) {
     // Process HTML to clean up style attributes that clash with dark theme
     let cleaned = desc
-      .replace(/color:\s*#[346][346][346]/gi, 'color: #d1d5db') // replace dark text with light gray
-      .replace(/color:\s*black/gi, 'color: #fff')
-      .replace(/background:\s*#[fF][cC][fF][cC][fF][cC]/gi, 'background: rgba(255,255,255,0.02)') // replace off-white background with subtle transparent dark
-      .replace(/background-color:\s*#[fF][cC][fF][cC][fF][cC]/gi, 'background-color: rgba(255,255,255,0.02)')
+      .replace(/color\s*:[^;]+;/gi, '') // Remove inline colors
+      .replace(/background-color\s*:[^;]+;/gi, '') // Remove inline background-colors
+      .replace(/background\s*:[^;]+;/gi, '') // Remove inline backgrounds
       .replace(/border-bottom:\s*1px\s*solid\s*#eee/gi, 'border-bottom: 1px solid rgba(255,255,255,0.08)')
       .replace(/border-right:\s*1px\s*solid\s*#eee/gi, 'border-right: 1px solid rgba(255,255,255,0.08)')
-      .replace(/border:\s*1px\s*solid\s*#eee/gi, 'border: 1px solid rgba(255,255,255,0.08)')
-      .replace(/color:\s*#333/gi, 'color: #f3f4f6')
-      .replace(/color:\s*#444/gi, 'color: #e5e7eb');
+      .replace(/border:\s*1px\s*solid\s*#eee/gi, 'border: 1px solid rgba(255,255,255,0.08)');
 
     return (
       <div 
@@ -163,11 +160,46 @@ export default function Dashboard({
 
   // 2. Services search & filter
   const [servicesSearch, setServicesSearch] = useState<string>('');
-  const [servicesTabCategory, setServicesTabCategory] = useState<string>('All');
+  const [servicesFilterPlatform, setServicesFilterPlatform] = useState<string>('All');
 
+  // Group services by category and filter by platform
+  const filteredAndGroupedServices = (() => {
+    let filtered = servicesCatalog.filter(service => {
+      const matchesPlatform = servicesFilterPlatform === 'All' || 
+                              service.category.toLowerCase().includes(servicesFilterPlatform.toLowerCase());
+      const matchesKeyword = service.name.toLowerCase().includes(servicesSearch.toLowerCase()) || 
+                             (service.description && service.description.toLowerCase().includes(servicesSearch.toLowerCase()));
+      return matchesPlatform && matchesKeyword;
+    });
+
+    const grouped: Record<string, SMMService[]> = {};
+    
+    // Sort services by their category order first
+    filtered.sort((a, b) => {
+        const catOrderA = (a.categorySortOrder !== undefined && a.categorySortOrder !== null) ? Number(a.categorySortOrder) : 99999;
+        const catOrderB = (b.categorySortOrder !== undefined && b.categorySortOrder !== null) ? Number(b.categorySortOrder) : 99999;
+        
+        if (catOrderA === 0 && catOrderB === 0) return a.category.localeCompare(b.category);
+        if (catOrderA === 0) return 1;
+        if (catOrderB === 0) return -1;
+        
+        if (catOrderA !== catOrderB) return catOrderA - catOrderB;
+        return a.category.localeCompare(b.category);
+    });
+
+    for (const service of filtered) {
+      if (!grouped[service.category]) grouped[service.category] = [];
+      grouped[service.category].push(service);
+    }
+    
+    return grouped;
+  })();
+
+  const platforms = ['All', 'Instagram', 'YouTube', 'TikTok', 'Twitter', 'Facebook'];
+  
   // 3. Add Funds
-  const [paymentAmount, setPaymentAmount] = useState<number>(500);
   const [paymentMethod, setPaymentMethod] = useState<string>('Razorpay Netbanking');
+  const [paymentAmount, setPaymentAmount] = useState<number>(500);
   const [fundsNotification, setFundsNotification] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState<string>('');
   const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount_percent: number } | null>(null);
@@ -539,7 +571,9 @@ export default function Dashboard({
   const categories = (() => {
     const catMap = new Map<string, number>();
     servicesCatalog.forEach(s => {
-      const order = s.categorySortOrder !== undefined && s.categorySortOrder !== null ? s.categorySortOrder : 99999;
+      const order = s.categorySortOrder !== undefined && s.categorySortOrder !== null
+        ? Number(s.categorySortOrder)
+        : 99999;
       if (!catMap.has(s.category) || order < catMap.get(s.category)!) {
         catMap.set(s.category, order);
       }
@@ -547,8 +581,15 @@ export default function Dashboard({
     
     return Array.from(catMap.entries())
       .sort((a, b) => {
-        if (a[1] !== b[1]) {
-          return a[1] - b[1];
+        const orderA = Number(a[1]);
+        const orderB = Number(b[1]);
+        
+        if (orderA === 0 && orderB === 0) return a[0].localeCompare(b[0]);
+        if (orderA === 0) return 1;
+        if (orderB === 0) return -1;
+        
+        if (orderA !== orderB) {
+          return orderA - orderB;
         }
         return a[0].localeCompare(b[0]);
       })
@@ -566,11 +607,12 @@ export default function Dashboard({
   // Set default selected category once catalog is loaded or platform filter changes
   useEffect(() => {
     if (servicesCatalog.length > 0 && filteredCategories.length > 0) {
-      if (!filteredCategories.includes(selectedCategory)) {
+      if (!selectedCategory || !filteredCategories.includes(selectedCategory)) {
+        console.log('DEBUG: Setting selectedCategory to lowest sort order:', filteredCategories[0]);
         setSelectedCategory(filteredCategories[0]);
       }
     }
-  }, [servicesCatalog, filteredCategories]);
+  }, [servicesCatalog, filteredCategories, selectedCategory]);
 
   // Filter service selections based on selected Category in New Order Form
   const filteredServicesForOrder = servicesCatalog.filter(s => s.category === selectedCategory);
@@ -818,14 +860,6 @@ export default function Dashboard({
       setTimeout(() => setProfileNotice(""), 4000);
     }
   };
-
-  // Filter services tab list
-  const filteredServicesTab = servicesCatalog.filter(service => {
-    const matchesCategory = servicesTabCategory === 'All' || service.category === servicesTabCategory;
-    const matchesKeyword = service.name.toLowerCase().includes(servicesSearch.toLowerCase()) || 
-                           (service.description && service.description.toLowerCase().includes(servicesSearch.toLowerCase()));
-    return matchesCategory && matchesKeyword;
-  });
 
   return (
     <div id="dashboard-root" className="min-h-screen bg-black text-white font-sans flex flex-col">
@@ -1688,76 +1722,75 @@ export default function Dashboard({
 
               {/* Category tabs row */}
               <div className="flex flex-wrap gap-1.5 pb-2">
-                {['All', ...categories].map((cat) => (
+                {platforms.map((plat) => (
                   <button
-                    key={cat}
-                    onClick={() => setServicesTabCategory(cat)}
+                    key={plat}
+                    onClick={() => setServicesFilterPlatform(plat)}
                     className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold tracking-tight transition-all ${
-                      servicesTabCategory === cat
+                      servicesFilterPlatform === plat
                         ? 'bg-white text-black font-semibold'
                         : 'text-neutral-400 hover:text-white bg-white/[0.02] border border-white/5'
                     }`}
                   >
-                    {cat}
+                    {plat}
                   </button>
                 ))}
               </div>
 
               {/* Grid content */}
-              <div className="grid grid-cols-1 gap-4">
-                {filteredServicesTab.length > 0 ? (
-                  filteredServicesTab.map((service) => (
-                    <div key={service.id} className="rounded-xl border border-white/5 bg-white/[0.01] p-5 hover:border-white/20 transition-all flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                      
-                      {/* Left: Metadata descriptor */}
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/10 font-mono text-[9px] uppercase text-neutral-400">
-                            {service.category}
-                          </span>
-                          <span className="text-[10px] text-neutral-500 font-mono select-all">REF: {service.id}</span>
-                        </div>
-                        <h4 className="text-sm font-semibold text-white tracking-tight">{service.name}</h4>
-                        {service.description && (
-                          <div className="max-w-2xl pt-1">
-                            {renderDescription(service.description)}
+              <div className="space-y-6">
+                {Object.entries(filteredAndGroupedServices).map(([category, services]) => (
+                  <div key={category} className="space-y-3">
+                    <h3 className="text-sm font-semibold text-white tracking-tight border-b border-white/10 pb-2">{category}</h3>
+                    <div className="grid grid-cols-1 gap-4">
+                      {services.map((service) => (
+                        <div key={service.id} className="rounded-xl border border-white/5 bg-white/[0.01] p-5 hover:border-white/20 transition-all flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                          
+                          {/* Left: Metadata descriptor */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/10 font-mono text-[9px] uppercase text-neutral-400">
+                                {service.category}
+                              </span>
+                              <span className="text-[10px] text-neutral-500 font-mono select-all">REF: {service.id}</span>
+                            </div>
+                            <h4 className="text-sm font-semibold text-white tracking-tight">{service.name}</h4>
+                            {service.description && (
+                              <div className="max-w-2xl pt-1">
+                                {renderDescription(service.description)}
+                              </div>
+                            )}
+                            
+                            <div className="flex flex-wrap gap-4 text-[10px] font-mono text-neutral-500 pt-1">
+                              <span>MIN ORDER: {service.min.toLocaleString()}</span>
+                              <span>MAX ORDER: {service.max.toLocaleString()}</span>
+                            </div>
                           </div>
-                        )}
-                        
-                        <div className="flex flex-wrap gap-4 text-[10px] font-mono text-neutral-500 pt-1">
-                          <span>MIN ORDER: {service.min.toLocaleString()}</span>
-                          <span>MAX ORDER: {service.max.toLocaleString()}</span>
-                        </div>
-                      </div>
 
-                      {/* Right: Rates and Order shortlink */}
-                      <div className="sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-4 pt-4 sm:pt-0 border-t sm:border-t-0 border-white/5">
-                        <div>
-                          <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider">Rate / 1,000 units</div>
-                          <div className="text-xl font-bold font-mono text-white">₹{getInrRate(service)}</div>
+                          {/* Right: Rates and Order shortlink */}
+                          <div className="sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-4 pt-4 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                            <div>
+                              <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider">Rate / 1,000 units</div>
+                              <div className="text-xl font-bold font-mono text-white">₹{getInrRate(service)}</div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setSelectedCategory(service.category);
+                                setSelectedServiceId(service.id);
+                                setActiveTab('new-order');
+                              }}
+                              className="px-3 py-1.5 bg-white text-black font-semibold text-[11px] rounded-lg hover:bg-neutral-200 transition-all flex items-center"
+                            >
+                              Select Service
+                              <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            setSelectedCategory(service.category);
-                            setSelectedServiceId(service.id);
-                            setActiveTab('new-order');
-                          }}
-                          className="px-3 py-1.5 bg-white text-black font-semibold text-[11px] rounded-lg hover:bg-neutral-200 transition-all flex items-center"
-                        >
-                          Select Service
-                          <ChevronRight className="w-3.5 h-3.5 ml-1" />
-                        </button>
-                      </div>
-
+                      ))}
                     </div>
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-dashed border-white/10 p-12 text-center text-neutral-500 font-mono text-xs">
-                    No services found matching your criteria.
                   </div>
-                )}
+                ))}
               </div>
-
             </div>
           )}
 
