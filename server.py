@@ -123,7 +123,36 @@ class TransactionRejectRequest(BaseModel):
     txId: str
 
 # --- Helper Methods ---
+async def load_smm_config():
+    global SMM_API_KEY, SMM_API_URL
+    key_val = os.environ.get("SMM_API_KEY", "4f875a1ab9fc4c8ca31cb98a6e82e98c")
+    if not key_val or key_val == "":
+        key_val = "4f875a1ab9fc4c8ca31cb98a6e82e98c"
+    url_val = "https://socialuphub-backend.onrender.com/api/v2"
+    
+    if supabase:
+        try:
+            res = supabase.table('global_settings').select('*').execute()
+            if res and res.data:
+                for row in res.data:
+                    if row.get('key') == 'smm_api_key' and row.get('value'):
+                        val = row.get('value').strip()
+                        if val and val != "null":
+                            key_val = val
+                    elif row.get('key') == 'smm_api_url' and row.get('value'):
+                        val = row.get('value').strip()
+                        if val and val != "null":
+                            url_val = val
+                            if "socialuphub.in" in url_val:
+                                url_val = "https://socialuphub-backend.onrender.com/api/v2"
+        except Exception as e:
+            print(f"Error loading global settings in Python: {e}")
+            
+    SMM_API_KEY = key_val
+    SMM_API_URL = url_val
+
 async def call_smm_api(action: str, **kwargs):
+    await load_smm_config()
     payload = {"key": SMM_API_KEY, "action": action, **kwargs}
     async with httpx.AsyncClient() as client:
         response = await client.post(SMM_API_URL, data=payload, timeout=20.0)
@@ -162,6 +191,7 @@ async def reject_recharge(req: TransactionRejectRequest):
 @app.get("/api/smm/admin/provider-balance")
 async def get_provider_balance():
     try:
+        await load_smm_config()
         if not SMM_API_KEY:
             return {"success": True, "balance": "24500.00", "currency": "INR", "note": "Demo Balance"}
         data = await call_smm_api("balance")

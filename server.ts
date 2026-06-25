@@ -39,13 +39,17 @@ async function loadServerSettings() {
         } else if (row.key === "landing_video_url") {
           LANDING_VIDEO_URL = row.value;
         } else if (row.key === "smm_api_key") {
-          SMM_API_KEY = row.value;
+          if (row.value && row.value.trim() !== "" && row.value !== "null") {
+            SMM_API_KEY = row.value.trim();
+          }
         } else if (row.key === "smm_api_url") {
           let loadedUrl = row.value || "https://socialuphub-backend.onrender.com/api/v2";
           if (loadedUrl.includes("socialuphub.in")) {
             loadedUrl = "https://socialuphub-backend.onrender.com/api/v2";
           }
-          SMM_API_URL = loadedUrl;
+          if (loadedUrl && loadedUrl.trim() !== "" && loadedUrl !== "null") {
+            SMM_API_URL = loadedUrl.trim();
+          }
         }
       }
       console.log("Successfully loaded config settings from Supabase:", {
@@ -73,6 +77,10 @@ app.use(express.urlencoded({ extended: true }));
 // Helper: safe fetch with form-urlencoded
 async function callSmmApi(payload: Record<string, string>) {
   try {
+    await loadServerSettings();
+    if (!payload.key || payload.key === "null" || payload.key === "") {
+      payload.key = SMM_API_KEY;
+    }
     const bodyParams = new URLSearchParams();
     for (const [key, value] of Object.entries(payload)) {
       bodyParams.append(key, value);
