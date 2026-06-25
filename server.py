@@ -163,7 +163,49 @@ async def call_smm_api(action: str, **kwargs):
 
 @app.post("/api/smm/status-sync")
 async def status_sync(req: StatusSyncRequest):
-    return {"success": True, "updatedOrders": []}
+    if not supabase: return {"success": True, "updatedOrders": []}
+    updated_orders = []
+    try:
+        for order in req.orders:
+            provider_order_id = order.get("providerOrderId")
+            order_id = order.get("id")
+            order_status = order.get("status")
+            order_charge = float(order.get("charge") or 0.0)
+
+            if provider_order_id and order_status in ["Pending", "In Progress"]:
+                try:
+                    print(f"Polling status from provider in Python for Order {order_id} (SMM: {provider_order_id})")
+                    status_resp = await call_smm_api("status", order=str(provider_order_id))
+                    if status_resp and "status" in status_resp:
+                        prov_status = str(status_resp.get("status")).lower()
+                        status = order_status
+                        
+                        if "completed" in prov_status or "success" in prov_status:
+                            status = "Completed"
+                        elif "canceled" in prov_status or "cancelled" in prov_status or "fail" in prov_status:
+                            status = "Cancelled"
+                        elif "progress" in prov_status or "process" in prov_status or "pending" in prov_status:
+                            status = "In Progress"
+                        elif "partial" in prov_status:
+                            status = "Cancelled"
+
+                        is_newly_cancelled = (status == "Cancelled" and order_status != "Cancelled")
+                        
+                        updated_orders.append({
+                            "id": order_id,
+                            "status": status,
+                            "startCount": status_resp.get("start_count") or 0,
+                            "remains": status_resp.get("remains") or 0,
+                            "refundIssued": is_newly_cancelled,
+                            "refundAmount": order_charge if is_newly_cancelled else 0.0
+                        })
+                except Exception as e:
+                    print(f"Failed to fetch status for order {order_id} in Python: {e}")
+
+        return {"success": True, "updatedOrders": updated_orders}
+    except Exception as ex:
+        print(f"Status sync error: {ex}")
+        return {"success": False, "error": str(ex)}
 
 @app.post("/api/smm/coupons/create")
 async def create_coupon(req: CouponCreateRequest):
@@ -308,7 +350,74 @@ async def auth_signin(req: SigninRequest):
 @app.post("/api/smm/order")
 async def create_order(req: OrderRequest):
     if not supabase: return {"success": False, "error": "DB not configured"}
-    return {"success": False, "error": "Order via Python backend not fully implemented"}
+    try:
+        service_id = req.serviceId
+        target_url = req.targetUrl
+        quantity = req.quantity
+
+        if not service_id or not target_url or not quantity:
+            return {"success": False, "error": "Missing required order parameters."}
+
+        # 1. Verify Real-time Price
+        current_db_price = 0.0
+        try:
+            db_service_req = supabase.table("smm_services").select("provider_rate").eq("service_id", int(service_id)).execute()
+            if db_service_req and db_service_req.data:
+                current_db_price = float(db_service_req.data[0].get("provider_rate") or 0)
+        except Exception as e:
+            print(f"Error querying local service rate: {e}")
+
+        # Call live API to get services list or verify service details
+        try:
+            raw_services = await call_smm_api("services")
+            live_service = None
+            if isinstance(raw_services, list):
+                for s in raw_services:
+                    if str(s.get("service")) == str(service_id):
+                        live_service = s
+                        break
+            
+            if not live_service:
+                return {"success": False, "error": "Service is no longer offered by the provider."}
+            
+            live_price = float(live_service.get("rate") or 0)
+            if live_price != current_db_price and current_db_price > 0:
+                # Update database
+                try:
+                    supabase.table("smm_services").update({"provider_rate": live_price}).eq("service_id", int(service_id)).execute()
+                except Exception as db_up_err:
+                    print(f"Error updating local rate cache: {db_up_err}")
+                if live_price > current_db_price:
+                    return {
+                        "success": False,
+                        "error": "PRICE_CHANGED_ERROR: The provider has updated the pricing for this service. We have synced our database. Please refresh the page to see the new price and try again."
+                    }
+        except Exception as api_err:
+            print(f"Non-blocking API services check failed: {api_err}")
+
+        # 2. Call SMM provider API to add order
+        response = await call_smm_api("add", service=str(service_id), link=str(target_url), quantity=str(quantity))
+        
+        # Check if error returned in response
+        if response and "error" in response:
+            error_msg = response.get("error")
+            print(f"SMM API error response: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+        if response and response.get("order"):
+            order_id = response.get("order")
+            print(f"SMM API Order received successfully! Provider Order ID: {order_id}")
+            return {
+                "success": True,
+                "providerOrderId": order_id,
+                "message": "Order placed successfully"
+            }
+        else:
+            return {"success": False, "error": f"Unknown SMM provider response: {response}"}
+
+    except Exception as e:
+        print(f"Failed to place order via SMM API: {e}")
+        return {"success": False, "error": f"Failed to place order: {str(e)}"}
 
 @app.get("/api/health")
 async def health_check():

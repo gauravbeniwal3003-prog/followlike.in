@@ -143,6 +143,17 @@ export default function Dashboard({
   const [loadingDb, setLoadingDb] = useState<boolean>(true);
   const [dbError, setDbError] = useState<string | null>(null);
 
+  const [timeString, setTimeString] = useState<string>('');
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setTimeString(now.toLocaleTimeString('en-IN', { hour12: false }));
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // New Orders and search state
   const [orderSearchQuery, setOrderSearchQuery] = useState<string>('');
   const [orderFilterStatus, setOrderFilterStatus] = useState<string>('ALL');
@@ -549,16 +560,21 @@ export default function Dashboard({
 
   // Automated background polling trigger for active queues
   useEffect(() => {
+    const hasActiveOrders = orders.some(
+      (o) => o.providerOrderId && (o.status === 'Pending' || o.status === 'In Progress')
+    );
+
     if (orders.length > 0) {
-      // Auto pulse sync 4 seconds after dashboard is loaded
+      // Auto pulse sync 2 seconds after dashboard is loaded
       const startupTimer = setTimeout(() => {
         syncActiveOrdersStatus(true);
-      }, 4000);
+      }, 2000);
 
-      // Periodic check every 25 seconds
+      // Periodic check: use a fast 5 seconds interval if there are active orders to search for their status
+      const intervalTime = hasActiveOrders ? 5000 : 25000;
       const statusInterval = setInterval(() => {
         syncActiveOrdersStatus(true);
-      }, 25000);
+      }, intervalTime);
 
       return () => {
         clearTimeout(startupTimer);
@@ -700,7 +716,7 @@ export default function Dashboard({
 
     // Process Purchase on successful API response
     const newBal = currentBalance - calcCharge;
-    const orderId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
+    const orderId = providerOrderId || 'ORD-' + Math.floor(100000 + Math.random() * 900000);
 
     const newOrder: SMMOrder = {
       id: orderId,
@@ -712,7 +728,7 @@ export default function Dashboard({
       charge: calcCharge,
       status: 'Pending',
       createdAt: new Date().toISOString(),
-      providerOrderId
+      providerOrderId: providerOrderId || orderId
     };
 
     // Save to Supabase (and local storage fallback)
@@ -862,7 +878,7 @@ export default function Dashboard({
   };
 
   return (
-    <div id="dashboard-root" className="min-h-screen bg-black text-white font-sans flex flex-col">
+    <div id="dashboard-root" className="min-h-screen bg-black text-white font-sans flex flex-col overflow-x-hidden w-full max-w-full">
       {/* Background ambient liquid nodes */}
       <div className="fixed top-[-250px] right-[-100px] w-[500px] h-[500px] rounded-full bg-neutral-900/40 blur-[130px] pointer-events-none"></div>
       <div className="fixed bottom-[-150px] left-[-200px] w-[600px] h-[600px] rounded-full bg-neutral-800/10 blur-[150px] pointer-events-none"></div>
@@ -1131,89 +1147,256 @@ export default function Dashboard({
         )}
 
         {/* ACTIVE MODULE VIEW CONTAINER */}
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 min-w-0 pb-24 md:pb-6">
           
           {/* TAB 0: HOME MULTI-METRIC TRACKER */}
           {activeTab === 'home' && (
-            <div id="view-dashboard-home" className="space-y-6">
+            <div id="view-dashboard-home" className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
               
-              {/* Promo Banner / Welcome indicator */}
-              <div className="rounded-xl border border-white/10 bg-gradient-to-r from-neutral-900 to-black p-6">
-                <h2 className="text-xl font-semibold text-white tracking-tight">Welcome, {session.name}!</h2>
-                <p className="text-xs text-neutral-400 mt-1">
-                  Manage your social growth and support.
-                </p>
+              {/* Premium Welcome Glassmorphic Banner */}
+              <div className="relative rounded-2xl border border-white/10 bg-gradient-to-br from-neutral-900 via-black to-neutral-950 p-6 sm:p-8 overflow-hidden shadow-2xl">
+                <div className="absolute top-0 right-0 w-80 h-80 bg-white/5 rounded-full blur-[100px] -mr-20 -mt-20 pointer-events-none"></div>
+                <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-white/[0.02] rounded-full blur-[60px] pointer-events-none"></div>
+                
+                <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] text-neutral-300 font-mono uppercase tracking-wider mb-3">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Secure SMM Node Active
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tighter leading-none font-display">
+                      Welcome, <span className="text-neutral-300 font-normal">{session.name}</span>!
+                    </h2>
+                    <p className="text-xs text-neutral-400 mt-2 max-w-md leading-relaxed">
+                      Your master gateway for instant, high-retention social audience generation and multichannel organic growth campaigns.
+                    </p>
+                  </div>
+                  
+                  {/* Dynamic clock panel */}
+                  <div className="flex flex-col items-start sm:items-end font-mono border-t sm:border-t-0 sm:border-l border-white/10 pt-4 sm:pt-0 sm:pl-6 shrink-0">
+                    <span className="text-[9px] uppercase tracking-widest text-neutral-500 font-bold">System Status</span>
+                    <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mt-0.5">● 100% Operational</span>
+                    <span className="text-xs font-medium text-white tracking-widest mt-1">
+                      {timeString || '00:00:00'} IST
+                    </span>
+                  </div>
+                </div>
+
                 {dbError && (
-                  <p className="mt-3 text-[10px] text-neutral-400 font-mono">
-                    ⚠️ Connection Status: {dbError}
-                  </p>
+                  <div className="mt-4 p-2 rounded bg-red-950/20 border border-red-500/20 text-[10px] text-red-400 font-mono">
+                    ⚠️ Connection status delay: {dbError}
+                  </div>
                 )}
+              </div>
+
+              {/* Quick Actions Control Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <button
+                  onClick={() => setActiveTab('new-order')}
+                  className="flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-white text-black hover:bg-neutral-200 active:scale-[0.98] transition-all cursor-pointer font-bold text-xs uppercase tracking-wider group"
+                >
+                  <span className="flex items-center gap-2">
+                    <Plus className="w-4 h-4" strokeWidth={2.5} />
+                    Place Order
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('funds')}
+                  className="flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer font-bold text-xs uppercase tracking-wider group"
+                >
+                  <span className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4" />
+                    Add Funds
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 opacity-40 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('services')}
+                  className="flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer font-bold text-xs uppercase tracking-wider group"
+                >
+                  <span className="flex items-center gap-2">
+                    <Layers className="w-4 h-4" />
+                    Catalog Rates
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 opacity-40 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('support')}
+                  className="flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer font-bold text-xs uppercase tracking-wider group"
+                >
+                  <span className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    WhatsApp
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 opacity-40 group-hover:translate-x-0.5 transition-transform" />
+                </button>
               </div>
 
               {/* Bento Grid Metrics */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Balance</div>
-                  <div className="text-2xl font-bold font-mono text-white">₹{currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                  <button onClick={() => setActiveTab('funds')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Add Funds</button>
-                </div>
-
-                <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Orders</div>
-                  <div className="text-2xl font-bold font-mono text-white">{orders.length}</div>
-                  <button onClick={() => setActiveTab('orders')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">View All</button>
-                </div>
-
-                <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Total Spent</div>
-                  <div className="text-2xl font-bold font-mono text-white">
-                    ₹{orders.reduce((sum, o) => sum + o.charge, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                
+                {/* Balance Card */}
+                <div 
+                  onClick={() => setActiveTab('funds')}
+                  className="group relative p-5 rounded-2xl glass-card glass-card-hover cursor-pointer"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="text-[10px] text-neutral-400 font-mono uppercase tracking-widest font-bold">Wallet Balance</div>
+                    <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <DollarSign className="w-4 h-4" />
+                    </div>
                   </div>
-                  <button onClick={() => setActiveTab('services')} className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">Catalog</button>
+                  <div className="mt-4">
+                    <div className="text-3xl font-black font-mono text-white tracking-tight">
+                      ₹{currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="mt-2 text-[10px] text-neutral-500 font-mono flex items-center justify-between">
+                      <span>Direct SMM Rates</span>
+                      <span className="text-emerald-400 hover:underline group-hover:translate-x-0.5 transition-transform">+ Recharge</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider font-semibold">Support</div>
-                  <div className="text-2xl font-bold font-mono text-white">Help</div>
-                  <a href="https://wa.me/918168285559" target="_blank" rel="noreferrer" className="text-[10px] text-neutral-400 hover:text-white font-mono underline block text-left">WhatsApp</a>
+                {/* Orders Card */}
+                <div 
+                  onClick={() => setActiveTab('orders')}
+                  className="p-5 rounded-2xl glass-card glass-card-hover cursor-pointer"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="text-[10px] text-neutral-400 font-mono uppercase tracking-widest font-bold">Active Requests</div>
+                    <div className="p-2 rounded-lg bg-neutral-800 text-neutral-300 border border-white/5">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <div className="text-3xl font-black font-mono text-white tracking-tight">
+                      {orders.length}
+                    </div>
+                    <div className="mt-2 text-[10px] text-neutral-500 font-mono flex items-center justify-between">
+                      <span>Total Queue Placed</span>
+                      <span className="text-neutral-300 hover:underline">Audits ↗</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Total Spent Card */}
+                <div 
+                  onClick={() => setActiveTab('services')}
+                  className="p-5 rounded-2xl glass-card glass-card-hover cursor-pointer"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="text-[10px] text-neutral-400 font-mono uppercase tracking-widest font-bold">Total Investments</div>
+                    <div className="p-2 rounded-lg bg-neutral-800 text-neutral-300 border border-white/5">
+                      <TrendingUp className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <div className="text-3xl font-black font-mono text-white tracking-tight">
+                      ₹{orders.reduce((sum, o) => sum + o.charge, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="mt-2 text-[10px] text-neutral-500 font-mono flex items-center justify-between">
+                      <span>All-time Spent</span>
+                      <span className="text-neutral-300 hover:underline">Catalog ↗</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Support Card */}
+                <div 
+                  onClick={() => setActiveTab('support')}
+                  className="p-5 rounded-2xl glass-card glass-card-hover cursor-pointer"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="text-[10px] text-neutral-400 font-mono uppercase tracking-widest font-bold">Support Gateway</div>
+                    <div className="p-2 rounded-lg bg-neutral-800 text-neutral-300 border border-white/5">
+                      <LifeBuoy className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <div className="text-3xl font-black text-white font-display tracking-tight">
+                      LIVE 24/7
+                    </div>
+                    <div className="mt-2 text-[10px] text-neutral-500 font-mono flex items-center justify-between">
+                      <span>Response &lt; 5 Min</span>
+                      <span className="text-neutral-300 hover:underline">WhatsApp ↗</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* SMM Channel Operational Status Widget */}
+              <div className="rounded-2xl border border-white/5 bg-neutral-950 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-neutral-400" />
+                    <h3 className="text-xs font-semibold uppercase text-white font-mono tracking-wider">Live Platform Status</h3>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-mono font-bold uppercase">
+                    All pipelines stable
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-1">
+                  {[
+                    { name: 'Instagram API', delay: '0-5m start', state: 'Operational' },
+                    { name: 'YouTube Core', delay: 'Instant', state: 'Operational' },
+                    { name: 'Twitter (X) Feed', delay: '5-15m start', state: 'Stable' },
+                    { name: 'WhatsApp Support', delay: '< 2m response', state: 'Active' }
+                  ].map((chan, idx) => (
+                    <div key={idx} className="p-3 rounded-xl border border-white/5 bg-white/[0.01] space-y-1.5">
+                      <div className="text-xs font-bold text-white truncate">{chan.name}</div>
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-neutral-500">{chan.delay}</span>
+                        <span className="text-emerald-400 font-extrabold flex items-center gap-1">
+                          <span className="w-1 h-1 rounded-full bg-emerald-400 inline-block"></span>
+                          {chan.state}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
               {/* Recent Orders Overview */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-xs font-semibold uppercase text-neutral-400 font-mono tracking-wider">Recent Orders</h3>
+                  <h3 className="text-xs font-semibold uppercase text-neutral-400 font-mono tracking-wider">Recent Transactions</h3>
                   <button onClick={() => setActiveTab('orders')} className="text-[10px] text-white hover:underline uppercase font-mono font-bold">View All Orders</button>
                 </div>
 
-                <div className="overflow-hidden border border-white/5 bg-white/[0.01] rounded-xl divide-y divide-white/[0.04]">
+                <div className="overflow-hidden border border-white/5 bg-neutral-950 rounded-2xl divide-y divide-white/[0.04]">
                   {orders.slice(0, 3).length > 0 ? (
                     orders.slice(0, 3).map((order) => (
-                      <div key={order.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs text-white font-semibold select-all">{order.id}</span>
-                            <span className="px-1.5 py-0.5 rounded bg-neutral-900 border border-white/5 text-[9px] text-neutral-400 font-mono uppercase">
+                      <div key={order.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-[10px] text-neutral-300 font-black select-all border border-white/10 px-2 py-0.5 rounded bg-neutral-900">{order.id}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-neutral-900 border border-white/5 text-[9px] text-neutral-400 font-mono uppercase truncate max-w-[120px]" title={order.category}>
                               {order.category}
                             </span>
                           </div>
-                          <div className="text-xs text-neutral-300 font-medium">{order.serviceName}</div>
-                          <div className="text-[10px] text-neutral-500 font-mono truncate max-w-sm select-all">{order.targetUrl}</div>
+                          <div className="text-xs text-white font-extrabold truncate">{order.serviceName}</div>
+                          <div className="text-[10px] text-neutral-500 font-mono truncate select-all">{order.targetUrl}</div>
                         </div>
 
-                        <div className="flex items-center gap-6">
-                          <div className="text-right">
+                        <div className="flex items-center justify-between md:justify-end gap-6 border-t md:border-t-0 border-white/5 pt-3 md:pt-0">
+                          <div className="text-left md:text-right">
                             <div className="text-[9px] text-neutral-500 uppercase font-mono">Quantity</div>
-                            <div className="text-xs font-semibold text-neutral-300 font-mono">{order.quantity.toLocaleString()}</div>
+                            <div className="text-xs font-bold text-neutral-300 font-mono">{order.quantity.toLocaleString()}</div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-[9px] text-neutral-500 uppercase font-mono">Price</div>
-                            <div className="text-xs font-bold text-white font-mono">₹{order.charge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                          <div className="text-left md:text-right">
+                            <div className="text-[9px] text-neutral-500 uppercase font-mono">Cost</div>
+                            <div className="text-xs font-bold text-emerald-400 font-mono">₹{order.charge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                           </div>
-                          <div className="text-right min-w-[100px]">
-                            <span className={`inline-block px-2 py-0.5 rounded font-mono text-[9px] uppercase ${
+                          <div className="text-right min-w-[90px]">
+                            <span className={`inline-block px-2.5 py-1 rounded-full font-mono text-[9px] font-black uppercase tracking-wider ${
                               order.status === 'Completed'
-                                ? 'bg-white text-black font-bold'
+                                ? 'bg-white text-black font-extrabold'
                                 : order.status === 'In Progress'
                                 ? 'bg-neutral-800 text-neutral-300 border border-neutral-700 font-semibold'
                                 : 'bg-black text-neutral-500 border border-neutral-900'
@@ -1234,16 +1417,22 @@ export default function Dashboard({
 
               {/* Speciality Badge & FAQ Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <h4 className="text-xs font-semibold text-white uppercase font-mono tracking-wider">🔒 Safe & Secured</h4>
+                <div className="p-5 rounded-2xl border border-white/5 bg-neutral-900/40 space-y-2">
+                  <h4 className="text-xs font-extrabold text-white uppercase font-mono tracking-wider flex items-center gap-1.5">
+                    <Shield className="w-4 h-4 text-neutral-400" />
+                    🔒 Safe & Secured Panel Protocols
+                  </h4>
                   <p className="text-xs text-neutral-400 leading-relaxed font-sans">
-                    Your orders and account links are processed using safe, standard security practices. No sensitive data is ever shared with third parties.
+                    Your social channel growth vectors are securely handled under standard API delivery channels. No personal credentials or private account parameters are ever required or logged.
                   </p>
                 </div>
-                <div className="p-5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                  <h4 className="text-xs font-semibold text-white uppercase font-mono tracking-wider">⚡ Quick Processing</h4>
+                <div className="p-5 rounded-2xl border border-white/5 bg-neutral-900/40 space-y-2">
+                  <h4 className="text-xs font-extrabold text-white uppercase font-mono tracking-wider flex items-center gap-1.5">
+                    <Zap className="w-4 h-4 text-neutral-400" />
+                    ⚡ Direct Upstream Execution Speed
+                  </h4>
                   <p className="text-xs text-neutral-400 leading-relaxed font-sans">
-                    All payments are processed quickly in Indian Rupees (INR). Make sure your account and posts are set to public visibility before ordering.
+                    We maintain an automated direct endpoint proxy link with the upstream servers for ultrafast start times. Keep channel target profiles public to avoid tracking drops.
                   </p>
                 </div>
               </div>
