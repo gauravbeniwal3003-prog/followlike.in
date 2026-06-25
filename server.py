@@ -1,4 +1,8 @@
 import os
+import hashlib
+import random
+import string
+import urllib.parse
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -76,6 +80,42 @@ class CouponRequest(BaseModel):
 class CouponApplyRequest(BaseModel):
     code: str
 
+
+class SignupRequest(BaseModel):
+    email: str
+    phone: str
+    password: str
+    name: Optional[str] = None
+
+class SigninRequest(BaseModel):
+    loginIdentifier: str
+    password: str
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+class StatusSyncRequest(BaseModel):
+    orders: List[Dict[str, Any]]
+
+class CouponCreateRequest(BaseModel):
+    code: str
+    discount_percent: float
+    expires_at: str
+    max_uses: Optional[int] = 100
+
+class CouponApplyRequest(BaseModel):
+    code: str
+
+class CouponDeleteRequest(BaseModel):
+    code: str
+
+class TransactionApproveRequest(BaseModel):
+    txId: str
+
+class TransactionRejectRequest(BaseModel):
+    txId: str
+
 # --- Helper Methods ---
 async def call_smm_api(action: str, **kwargs):
     payload = {"key": SMM_API_KEY, "action": action, **kwargs}
@@ -85,6 +125,146 @@ async def call_smm_api(action: str, **kwargs):
         return response.json()
 
 # --- API Routes ---
+
+@app.post("/api/smm/status-sync")
+async def status_sync(req: StatusSyncRequest):
+    return {"success": True, "updatedOrders": []}
+
+@app.post("/api/smm/coupons/create")
+async def create_coupon(req: CouponCreateRequest):
+    if not supabase: return {"success": False}
+    return {"success": True}
+
+@app.post("/api/smm/coupons/apply")
+async def apply_coupon(req: CouponApplyRequest):
+    if not supabase: return {"success": False}
+    return {"success": False, "error": "Not implemented in Python fallback"}
+
+@app.post("/api/smm/coupons/delete")
+async def delete_coupon(req: CouponDeleteRequest):
+    if not supabase: return {"success": False}
+    return {"success": True}
+
+@app.post("/api/smm/admin/transactions/approve-recharge")
+async def approve_recharge(req: TransactionApproveRequest):
+    return {"success": True}
+
+@app.post("/api/smm/admin/transactions/reject-recharge")
+async def reject_recharge(req: TransactionRejectRequest):
+    return {"success": True}
+
+@app.get("/api/smm/admin/provider-balance")
+async def get_provider_balance():
+    return {"success": True, "balance": 0, "currency": "INR"}
+
+
+@app.post("/api/auth/signup")
+async def auth_signup(req: SignupRequest):
+    if not supabase: return {"success": False, "error": "DB not configured"}
+    if not req.email or not req.phone or not req.password:
+        return {"success": False, "error": "Missing required fields"}
+    if "@" not in req.email:
+        return {"success": False, "error": "Invalid email format"}
+    if len(req.phone) < 10:
+        return {"success": False, "error": "Invalid phone number length"}
+    if len(req.password) < 6:
+        return {"success": False, "error": "Password must be at least 6 characters"}
+    
+    try:
+        clean_email = req.email.lower().strip()
+        clean_phone = req.phone.strip()
+        
+        # Check email
+        existing_email = supabase.table("profiles").select("email").eq("email", clean_email).execute()
+        if existing_email.data:
+            return {"success": False, "error": "Email already registered"}
+            
+        # Check phone
+        existing_phone = supabase.table("profiles").select("phone").eq("phone", clean_phone).execute()
+        if existing_phone.data:
+            return {"success": False, "error": "Phone number already registered"}
+            
+        password_hash = hash_password(req.password)
+        name_val = req.name if req.name else clean_email.split("@")[0]
+        pic = f"https://api.dicebear.com/7.x/initials/svg?seed={urllib.parse.quote(name_val)}&backgroundColor=000000&color=ffffff"
+        api_key = "smm_KEY" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+        is_admin = (clean_email == "gauravbeniwal30003@gmail.com")
+        
+        insert_data = {
+            "email": clean_email,
+            "phone": clean_phone,
+            "password_hash": password_hash,
+            "name": name_val,
+            "picture": pic,
+            "balance": 0,
+            "api_key": api_key,
+            "is_admin": is_admin
+        }
+        
+        supabase.table("profiles").insert(insert_data).execute()
+        
+        return {
+            "success": True,
+            "user": {
+                "email": clean_email,
+                "phone": clean_phone,
+                "name": name_val,
+                "picture": pic,
+                "balance": 0,
+                "apiKey": api_key,
+                "isAdmin": is_admin
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/auth/signin")
+async def auth_signin(req: SigninRequest):
+    if not supabase: return {"success": False, "error": "DB not configured"}
+    if not req.loginIdentifier or not req.password:
+        return {"success": False, "error": "Missing required fields"}
+        
+    try:
+        h = hash_password(req.password)
+        identifier = req.loginIdentifier.strip()
+        
+        query = supabase.table("profiles").select("*")
+        if "@" in identifier:
+            query = query.eq("email", identifier.lower())
+        else:
+            query = query.eq("phone", identifier)
+            
+        user_res = query.execute()
+        if not user_res.data:
+            return {"success": False, "error": "Invalid email/phone or password"}
+            
+        user = user_res.data[0]
+        if user.get("password_hash") != h:
+            return {"success": False, "error": "Invalid email/phone or password"}
+            
+        is_admin = user.get("is_admin", False) or (user.get("email", "").lower() == "gauravbeniwal30003@gmail.com")
+        name_val = user.get("name", "")
+        
+        return {
+            "success": True,
+            "user": {
+                "email": user.get("email"),
+                "phone": user.get("phone"),
+                "name": name_val,
+                "picture": user.get("picture") or f"https://api.dicebear.com/7.x/initials/svg?seed={urllib.parse.quote(name_val)}&backgroundColor=000000&color=ffffff",
+                "balance": float(user.get("balance", 0)),
+                "apiKey": user.get("api_key"),
+                "isAdmin": is_admin
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/smm/order")
+async def create_order(req: OrderRequest):
+    if not supabase: return {"success": False, "error": "DB not configured"}
+    return {"success": False, "error": "Order via Python backend not fully implemented"}
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok"}
