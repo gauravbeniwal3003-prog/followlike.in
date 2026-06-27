@@ -141,6 +141,7 @@ export default function App() {
                   globalSettings={globalSettings} 
                   onUpdateSettings={(newSet: any) => setGlobalSettings(newSet)} 
                   refreshServices={refreshServices}
+                  onLogout={handleLogout}
                 />
               ) : (
                 <Navigate to="/" replace />

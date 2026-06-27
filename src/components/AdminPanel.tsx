@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
-export default function AdminPanel({ session, globalSettings, onUpdateSettings, refreshServices }: any) {
+export default function AdminPanel({ session, globalSettings, onUpdateSettings, refreshServices, onLogout }: any) {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -261,12 +261,12 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
   };
 
   useEffect(() => {
-    // Check local storage for admin auth token
+    // Check local storage for admin auth token or if session has admin credentials
     const token = localStorage.getItem('smm_admin_token');
-    if (token) {
+    if (token || session?.isAdmin) {
       setIsAdminAuthenticated(true);
     }
-  }, []);
+  }, [session]);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,6 +292,12 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
   const handleAdminLogout = () => {
     localStorage.removeItem('smm_admin_token');
     setIsAdminAuthenticated(false);
+    if (onLogout) {
+      onLogout();
+    } else {
+      localStorage.removeItem('smm_session');
+      window.location.href = '/';
+    }
   };
 
   // Fetch logic
