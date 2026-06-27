@@ -115,6 +115,12 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential: response.credential })
       });
+
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Authentication server returned a non-JSON response. Please ensure your backend changes are fully deployed and the server is running.");
+      }
+
       const resData = await res.json();
       if (!res.ok || !resData.success) {
         setError(resData.error || 'Google authentication failed.');
@@ -127,9 +133,9 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
         onSuccess(resData.user);
         onClose();
       }, 1000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Google Auth API Error:", err);
-      setError('Connection to authentication server failed.');
+      setError(err.message || 'Connection to authentication server failed. Please ensure your backend is deployed.');
       setLoading(false);
     }
   };
