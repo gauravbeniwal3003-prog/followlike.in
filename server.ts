@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import dotenv from "dotenv";
@@ -1503,6 +1502,14 @@ app.post("/api/auth/google", async (req, res) => {
     }
 
     const payload = await verifyRes.json();
+    
+    // Validate audience (aud) matches our Client ID
+    const expectedClientId = process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "188819967487-2tk0hgu4p5m3eo2npummaqq0523cehh0.apps.googleusercontent.com";
+    if (payload.aud !== expectedClientId) {
+      console.error("Google Auth Audience mismatch:", payload.aud, "expected:", expectedClientId);
+      return res.status(400).json({ success: false, error: "Authentication client ID mismatch. Please check your credentials." });
+    }
+
     const email = payload.email;
     const name = payload.name;
     const picture = payload.picture;
@@ -2114,6 +2121,7 @@ app.get("/api/smm/admin/provider-balance", async (req, res) => {
 // Vite server development configuration
 async function initializeServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { API_BASE } from '../config';
 import React, { useState, useEffect } from 'react';
 import { Mail, Phone, Lock, Eye, EyeOff, Shield, User, RefreshCw, CheckCircle } from 'lucide-react';
@@ -54,7 +55,7 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
   useEffect(() => {
     if (!isOpen) return;
 
-    const clientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "188819967487-2tk0hgu4p5m3eo2npummaqq0523cehh0.apps.googleusercontent.com";
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "188819967487-2tk0hgu4p5m3eo2npummaqq0523cehh0.apps.googleusercontent.com";
 
     const initializeGoogleSignIn = () => {
       if (!clientId) {
