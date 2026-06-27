@@ -1332,7 +1332,7 @@ export default function Dashboard({
               Settings
             </button>
 
-            {(session.isAdmin || session.email === 'gauravbeniwal30003@gmail.com') && (
+            {session.isAdmin && (
               <a
                 href="/admin"
                 id="sidebar-tab-admin"

@@ -3,6 +3,7 @@ import { API_BASE } from '../config';
 import React, { useState, useEffect } from 'react';
 import { Mail, Phone, Lock, Eye, EyeOff, Shield, User, RefreshCw, CheckCircle } from 'lucide-react';
 import { UserSession } from '../types';
+import { supabase, syncUserProfile } from '../lib/supabase';
 
 declare global {
   interface Window {
@@ -111,32 +112,92 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
     setSuccessMsg('');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: response.credential })
-      });
+      console.log("Attempting Google Sign-In via Supabase Client SDK...");
+      let userSession: UserSession | null = null;
 
-      const contentType = res.headers.get("content-type") || "";
-      if (!contentType.includes("application/json")) {
-        throw new Error("Authentication server returned a non-JSON response. Please ensure your backend changes are fully deployed and the server is running.");
+      try {
+        // Attempt native Supabase ID token sign-in
+        const { data, error: authError } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: response.credential
+        });
+
+        if (authError) {
+          throw authError;
+        }
+
+        if (data?.user) {
+          console.log("Supabase Client SDK authentication successful!", data.user);
+          const email = data.user.email;
+          const name = data.user.user_metadata?.full_name || data.user.user_metadata?.name || email?.split('@')[0] || 'Google User';
+          const picture = data.user.user_metadata?.avatar_url || data.user.user_metadata?.picture || '';
+
+          if (!email) {
+            throw new Error('Google account did not provide an email address.');
+          }
+
+          // Sync profile to database using our robust helper
+          userSession = await syncUserProfile(email, name);
+
+          // Update profile picture in Supabase if missing
+          if (picture) {
+            try {
+              const { data: existingProf } = await supabase
+                .from('profiles')
+                .select('picture')
+                .eq('email', email.toLowerCase())
+                .maybeSingle();
+              
+              if (existingProf && !existingProf.picture) {
+                await supabase
+                  .from('profiles')
+                  .update({ picture })
+                  .eq('email', email.toLowerCase());
+                userSession.picture = picture;
+              }
+            } catch (picErr) {
+              console.warn("Could not sync profile picture:", picErr);
+            }
+          }
+        }
+      } catch (clientErr: any) {
+        console.warn("Supabase Client SDK login failed or Google provider is not configured in Supabase. Falling back to Express token verify server...", clientErr);
       }
 
-      const resData = await res.json();
-      if (!res.ok || !resData.success) {
-        setError(resData.error || 'Google authentication failed.');
-        setLoading(false);
-        return;
+      // Fallback: If Supabase client sign-in failed or returned no user, try our robust Express server endpoint
+      if (!userSession) {
+        console.log("Routing login verification via our backend server...");
+        const res = await fetch(`${API_BASE}/api/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential: response.credential })
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error("Authentication server returned a non-JSON response. Please check your backend configuration or ensure you have configured the Google Auth provider in your Supabase Dashboard under 'Authentication -> Providers -> Google'.");
+        }
+
+        const resData = await res.json();
+        if (!res.ok || !resData.success) {
+          throw new Error(resData.error || 'Google authentication via backend failed.');
+        }
+
+        userSession = resData.user;
+      }
+
+      if (!userSession) {
+        throw new Error("Could not authenticate user.");
       }
       
       setSuccessMsg('Signed in successfully with Google!');
       setTimeout(() => {
-        onSuccess(resData.user);
+        onSuccess(userSession!);
         onClose();
       }, 1000);
     } catch (err: any) {
-      console.error("Google Auth API Error:", err);
-      setError(err.message || 'Connection to authentication server failed. Please ensure your backend is deployed.');
+      console.error("Google Auth Error:", err);
+      setError(err.message || 'Google authentication failed. Please check your credentials and configuration.');
       setLoading(false);
     }
   };
