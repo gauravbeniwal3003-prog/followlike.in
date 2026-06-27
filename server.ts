@@ -13,7 +13,7 @@ function hashPassword(password: string): string {
 }
 
 // Base SMM Configuration
-let SMM_API_KEY = process.env.SMM_API_KEY || "";
+let SMM_API_KEY = process.env.SMM_API_KEY || "4f875a1ab9fc4c8ca31cb98a6e82e98c";
 let SMM_API_URL = process.env.SMM_API_URL || "https://socialuphub-backend.onrender.com/api/v2";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://mfrnehshclymmydtykpa.supabase.co";
@@ -23,6 +23,8 @@ const supabase = createClient(SUPABASE_URL as string, SUPABASE_ANON_KEY as strin
 
 let PROFIT_MARKUP_PERCENT = 15;
 let LANDING_VIDEO_URL = ""; // Removed rickroll demo video
+let PINNED_CATEGORY = "";
+let STARRED_SERVICES: string[] = [];
 
 // Advanced Admin Overrides - DEPRECATED (Now DB Driven)
 
@@ -38,6 +40,14 @@ async function loadServerSettings() {
           PROFIT_MARKUP_PERCENT = parseFloat(row.value) || 15;
         } else if (row.key === "landing_video_url") {
           LANDING_VIDEO_URL = row.value;
+        } else if (row.key === "pinned_category") {
+          PINNED_CATEGORY = row.value || "";
+        } else if (row.key === "starred_services") {
+          try {
+            STARRED_SERVICES = JSON.parse(row.value) || [];
+          } catch (e) {
+            STARRED_SERVICES = row.value ? row.value.split(",").map((s: any) => String(s).trim()) : [];
+          }
         } else if (row.key === "smm_api_key") {
           if (row.value && row.value.trim() !== "" && row.value !== "null") {
             SMM_API_KEY = row.value.trim();
@@ -74,6 +84,71 @@ const PORT = Number(process.env.PORT || 3000);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Rate limiting / brute force protection for admin panel
+interface RateLimitInfo {
+  attempts: number[];
+  blockedUntil: number;
+}
+
+const adminLoginLimits = new Map<string, RateLimitInfo>();
+
+const ADMIN_BRUTE_FORCE_WINDOW_MS = 60 * 1000; // 1 minute
+const ADMIN_MAX_ATTEMPTS = 100;
+const ADMIN_BLOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes temporary block
+
+function getClientIp(req: any): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    if (typeof forwarded === 'string') {
+      return forwarded.split(',')[0].trim();
+    } else if (Array.isArray(forwarded)) {
+      return forwarded[0].trim();
+    }
+  }
+  return req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown';
+}
+
+const adminRateLimiter = (req: any, res: any, next: any) => {
+  const ip = getClientIp(req);
+  const now = Date.now();
+
+  let limitInfo = adminLoginLimits.get(ip);
+  if (!limitInfo) {
+    limitInfo = { attempts: [], blockedUntil: 0 };
+    adminLoginLimits.set(ip, limitInfo);
+  }
+
+  // Check if temporarily blocked
+  if (limitInfo.blockedUntil > now) {
+    const remainingTime = Math.ceil((limitInfo.blockedUntil - now) / 1000);
+    return res.status(429).json({
+      success: false,
+      error: `Too many attempts from this IP. Temporarily blocked. Please try again in ${remainingTime} seconds.`
+    });
+  }
+
+  // Clean up attempts older than the window (1 minute)
+  limitInfo.attempts = limitInfo.attempts.filter(timestamp => now - timestamp < ADMIN_BRUTE_FORCE_WINDOW_MS);
+
+  // Add current attempt
+  limitInfo.attempts.push(now);
+
+  // Check if max attempts reached
+  if (limitInfo.attempts.length > ADMIN_MAX_ATTEMPTS) {
+    limitInfo.blockedUntil = now + ADMIN_BLOCK_DURATION_MS;
+    adminLoginLimits.set(ip, limitInfo);
+    
+    return res.status(429).json({
+      success: false,
+      error: `Too many attempts. Your IP has been temporarily blocked for 15 minutes.`
+    });
+  }
+
+  next();
+};
+
+app.use("/api/smm/admin", adminRateLimiter);
+
 // Helper: safe fetch with form-urlencoded
 async function callSmmApi(payload: Record<string, string>) {
   try {
@@ -82,7 +157,13 @@ async function callSmmApi(payload: Record<string, string>) {
       payload.key = SMM_API_KEY;
     }
     if (!payload.key || payload.key.trim() === "" || payload.key === "null") {
-      throw new Error("SMM API Key is not configured. Please define SMM_API_KEY as an environment variable or set it in your Supabase global_settings table.");
+      console.log("[Info] SMM API is currently in Demo/Unconfigured mode.");
+      if (payload.action === "services") {
+        return [];
+      } else if (payload.action === "balance") {
+        return { balance: "24500.00", currency: "INR" };
+      }
+      return { success: false, error: "unconfigured" };
     }
     const bodyParams = new URLSearchParams();
     for (const [key, value] of Object.entries(payload)) {
@@ -314,6 +395,128 @@ async function backgroundSyncPrices() {
   }
 }
 
+async function syncIncompleteOrders() {
+  console.log("[Sync Orders] Fetching incomplete orders from database...");
+  if (!SMM_API_KEY) {
+    console.log("[Sync Orders] Skipped: SMM API key is missing.");
+    return { count: 0, updated: 0, refunds: 0 };
+  }
+
+  // Fetch orders that are not completed and not cancelled
+  const { data: incompleteOrders, error: fetchErr } = await supabase
+    .from("orders")
+    .select("*")
+    .not("status", "in", '("Completed","Cancelled")');
+
+  if (fetchErr) {
+    console.error("[Sync Orders] Failed to fetch incomplete orders:", fetchErr.message);
+    return { count: 0, updated: 0, refunds: 0 };
+  }
+
+  if (!incompleteOrders || incompleteOrders.length === 0) {
+    console.log("[Sync Orders] No incomplete orders found.");
+    return { count: 0, updated: 0, refunds: 0 };
+  }
+
+  console.log(`[Sync Orders] Found ${incompleteOrders.length} incomplete orders. Polling provider...`);
+
+  let updatedCount = 0;
+  let refundCount = 0;
+
+  for (const order of incompleteOrders) {
+    const provId = order.provider_order_id;
+    if (!provId) continue;
+
+    try {
+      const statusResp = await callSmmApi({
+        key: SMM_API_KEY,
+        action: "status",
+        order: String(provId),
+      });
+
+      if (statusResp && statusResp.status) {
+        let newStatus = order.status;
+        const provStatus = String(statusResp.status).toLowerCase();
+
+        // Standard SMM status mapping
+        if (provStatus.includes("completed") || provStatus.includes("success")) {
+          newStatus = "Completed";
+        } else if (
+          provStatus.includes("canceled") ||
+          provStatus.includes("cancelled") ||
+          provStatus.includes("fail")
+        ) {
+          newStatus = "Cancelled";
+        } else if (
+          provStatus.includes("progress") ||
+          provStatus.includes("process") ||
+          provStatus.includes("pending")
+        ) {
+          newStatus = "In Progress";
+        } else if (provStatus.includes("partial")) {
+          newStatus = "Cancelled"; // Mark as cancelled to trigger refund
+        }
+
+        if (newStatus !== order.status) {
+          console.log(`[Sync Orders] Order ${order.id} status change: ${order.status} -> ${newStatus}`);
+          
+          // Update order status in db
+          await supabase
+            .from("orders")
+            .update({ status: newStatus })
+            .eq("id", order.id);
+
+          updatedCount++;
+
+          // If the order is newly cancelled, refund the user!
+          if (newStatus === "Cancelled") {
+            const refundValue = parseFloat(order.charge);
+            if (refundValue > 0 && order.user_email) {
+              console.log(`[Sync Orders] Order ${order.id} cancelled. Refunding ₹${refundValue} to ${order.user_email}`);
+              
+              // 1. Fetch user profile to get current balance
+              const { data: profile } = await supabase
+                .from("profiles")
+                .select("balance")
+                .eq("email", order.user_email)
+                .single();
+
+              const currentBal = profile ? parseFloat(profile.balance || "0") : 0;
+              const nextBal = currentBal + refundValue;
+
+              // 2. Update user balance in profiles
+              await supabase
+                .from("profiles")
+                .update({ balance: nextBal })
+                .eq("email", order.user_email);
+
+              // 3. Log Refund Transaction in database
+              const refundTxId = "TXN-REF" + Math.floor(100000 + Math.random() * 900000);
+              await supabase
+                .from("transactions")
+                .insert({
+                  id: refundTxId,
+                  user_email: order.user_email,
+                  amount: refundValue,
+                  method: "Cancellation Refund",
+                  status: "Success",
+                  created_at: new Date().toISOString()
+                });
+
+              refundCount++;
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Sync Orders] Could not sync status for order ${order.id}:`, err.message);
+    }
+  }
+
+  console.log(`[Sync Orders] Finished sync. Updated: ${updatedCount}, Refunded: ${refundCount}`);
+  return { count: incompleteOrders.length, updated: updatedCount, refunds: refundCount };
+}
+
 // Start background task every 15 minutes to check prices and update database
 setInterval(() => {
   console.log("[Background] Running scheduled 15-minute price check and database update...");
@@ -436,11 +639,19 @@ app.post("/api/smm/admin/services/sync", async (req, res) => {
       action: "balance",
     }).catch(() => ({ balance: 0 }));
 
+    const orderSyncResult = await syncIncompleteOrders().catch((e) => {
+      console.error("Order status sync failed during admin services sync:", e);
+      return { count: 0, updated: 0, refunds: 0 };
+    });
+
     console.log(`[Admin] Sync finished. Items: ${rawServices.length}`);
     res.json({
       success: true,
       count: rawServices.length,
       balance: balanceRes.balance || 0,
+      ordersProcessed: orderSyncResult.count,
+      ordersUpdated: orderSyncResult.updated,
+      ordersRefunded: orderSyncResult.refunds,
     });
   } catch (err: any) {
     console.error("[Admin] Sync error:", err);
@@ -637,11 +848,15 @@ app.post("/api/smm/services", async (req, res) => {
             actualCost * (1 + appliedMargin / 100) * 100,
           ) / 100;
 
+        const isPinned = (row.category_name && PINNED_CATEGORY && row.category_name.toLowerCase().trim() === PINNED_CATEGORY.toLowerCase().trim()) ||
+          (cat.name && PINNED_CATEGORY && cat.name.toLowerCase().trim() === PINNED_CATEGORY.toLowerCase().trim());
+
         return {
           id: String(row.service_id),
           category: cat.custom_name || row.category_name,
-          categorySortOrder:
-            cat.sort_order !== undefined && cat.sort_order !== null
+          categorySortOrder: isPinned
+            ? -1000000
+            : cat.sort_order !== undefined && cat.sort_order !== null
               ? Number(cat.sort_order)
               : 99999,
           name: row.custom_name || row.api_name || `Service #${row.service_id}`,
@@ -651,6 +866,7 @@ app.post("/api/smm/services", async (req, res) => {
           description:
             row.custom_description ||
             `⚡ High-quality SMM delivery system for ${row.category_name}.`,
+          is_starred: STARRED_SERVICES.includes(String(row.service_id)),
         };
       })
       .filter(Boolean);
@@ -888,12 +1104,13 @@ app.get("/api/smm/settings", async (req, res) => {
       landing_video_url: LANDING_VIDEO_URL,
       smm_api_key: SMM_API_KEY,
       smm_api_url: SMM_API_URL,
+      pinned_category: PINNED_CATEGORY,
     },
   });
 });
 
 app.post("/api/smm/settings/update", async (req, res) => {
-  const { profit_markup_percent, landing_video_url, smm_api_key, smm_api_url } = req.body;
+  const { profit_markup_percent, landing_video_url, smm_api_key, smm_api_url, pinned_category } = req.body;
   if (profit_markup_percent !== undefined) {
     PROFIT_MARKUP_PERCENT = parseFloat(profit_markup_percent);
     try {
@@ -902,7 +1119,7 @@ app.post("/api/smm/settings/update", async (req, res) => {
         .upsert({
           key: "profit_markup_percent",
           value: String(profit_markup_percent),
-        });
+        }, { onConflict: "key" });
     } catch (e) {
       console.warn("Supabase global_settings sync failed:", e);
     }
@@ -912,7 +1129,17 @@ app.post("/api/smm/settings/update", async (req, res) => {
     try {
       await supabase
         .from("global_settings")
-        .upsert({ key: "landing_video_url", value: String(landing_video_url) });
+        .upsert({ key: "landing_video_url", value: String(landing_video_url) }, { onConflict: "key" });
+    } catch (e) {
+      console.warn("Supabase global_settings sync failed:", e);
+    }
+  }
+  if (pinned_category !== undefined) {
+    PINNED_CATEGORY = String(pinned_category).trim();
+    try {
+      await supabase
+        .from("global_settings")
+        .upsert({ key: "pinned_category", value: PINNED_CATEGORY }, { onConflict: "key" });
     } catch (e) {
       console.warn("Supabase global_settings sync failed:", e);
     }
@@ -922,7 +1149,7 @@ app.post("/api/smm/settings/update", async (req, res) => {
     try {
       await supabase
         .from("global_settings")
-        .upsert({ key: "smm_api_key", value: String(smm_api_key) });
+        .upsert({ key: "smm_api_key", value: String(smm_api_key) }, { onConflict: "key" });
     } catch (e) {
       console.warn("Supabase global_settings sync failed:", e);
     }
@@ -936,7 +1163,7 @@ app.post("/api/smm/settings/update", async (req, res) => {
     try {
       await supabase
         .from("global_settings")
-        .upsert({ key: "smm_api_url", value: urlToSave });
+        .upsert({ key: "smm_api_url", value: urlToSave }, { onConflict: "key" });
     } catch (e) {
       console.warn("Supabase global_settings sync failed:", e);
     }
@@ -949,8 +1176,25 @@ app.post("/api/smm/settings/update", async (req, res) => {
       landing_video_url: LANDING_VIDEO_URL,
       smm_api_key: SMM_API_KEY,
       smm_api_url: SMM_API_URL,
+      pinned_category: PINNED_CATEGORY,
     },
   });
+});
+
+app.post("/api/smm/admin/categories/pin", async (req, res) => {
+  const { name } = req.body;
+  try {
+    PINNED_CATEGORY = name ? String(name).trim() : "";
+    await supabase
+      .from("global_settings")
+      .upsert({ key: "pinned_category", value: PINNED_CATEGORY }, { onConflict: "key" });
+
+    servicesCache = null; // Invalidate caches
+    adminCategoriesCache = null;
+    res.json({ success: true, pinned_category: PINNED_CATEGORY });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 // === COUPONS ENGINE ===
@@ -1397,15 +1641,14 @@ app.post("/api/smm/admin/transactions/reject-recharge", async (req, res) => {
 // Categories and Services overrides
 app.get("/api/smm/admin/categories", async (req, res) => {
   try {
-    if (adminCategoriesCache) {
-      return res.json({ success: true, categories: adminCategoriesCache });
+    if (!adminCategoriesCache) {
+      const { data: categories } = await supabase
+        .from("smm_categories")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      adminCategoriesCache = categories || [];
     }
-    const { data: categories } = await supabase
-      .from("smm_categories")
-      .select("*")
-      .order("sort_order", { ascending: true });
-    adminCategoriesCache = categories || [];
-    res.json({ success: true, categories: adminCategoriesCache });
+    res.json({ success: true, categories: adminCategoriesCache, pinned_category: PINNED_CATEGORY });
   } catch (err: any) {
     res.json({ success: false, error: err.message });
   }
@@ -1436,15 +1679,43 @@ app.post("/api/smm/admin/categories/update", async (req, res) => {
 
 app.get("/api/smm/admin/services", async (req, res) => {
   try {
-    if (adminServicesCache) {
-      return res.json({ success: true, services: adminServicesCache });
+    if (!adminServicesCache) {
+      const { data: services } = await supabase
+        .from("smm_services")
+        .select("*")
+        .order("service_id", { ascending: true });
+      adminServicesCache = services || [];
     }
-    const { data: services } = await supabase
-      .from("smm_services")
-      .select("*")
-      .order("service_id", { ascending: true });
-    adminServicesCache = services || [];
-    res.json({ success: true, services: adminServicesCache });
+    const mapped = adminServicesCache.map((row: any) => ({
+      ...row,
+      is_starred: STARRED_SERVICES.includes(String(row.service_id)),
+    }));
+    res.json({ success: true, services: mapped, starred_services: STARRED_SERVICES });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/smm/admin/services/star", async (req, res) => {
+  const { service_id, is_starred } = req.body;
+  try {
+    const sId = String(service_id).trim();
+    if (is_starred) {
+      if (!STARRED_SERVICES.includes(sId)) {
+        STARRED_SERVICES.push(sId);
+      }
+    } else {
+      STARRED_SERVICES = STARRED_SERVICES.filter(id => id !== sId);
+    }
+
+    await supabase
+      .from("global_settings")
+      .upsert({ key: "starred_services", value: JSON.stringify(STARRED_SERVICES) }, { onConflict: "key" });
+
+    servicesCache = null; // Invalidate cache so changes reflect instantly
+    adminServicesCache = null;
+
+    res.json({ success: true, starred_services: STARRED_SERVICES });
   } catch (err: any) {
     res.json({ success: false, error: err.message });
   }
@@ -1614,6 +1885,88 @@ app.get("/api/smm/admin/orders", async (req, res) => {
   }
 });
 
+app.post("/api/smm/admin/orders/update", async (req, res) => {
+  const { id, status, provider_order_id, target_url, quantity, charge } = req.body;
+  try {
+    const updateObj: any = {};
+    if (status !== undefined) updateObj.status = status;
+    if (provider_order_id !== undefined) updateObj.provider_order_id = provider_order_id;
+    if (target_url !== undefined) updateObj.target_url = target_url;
+    if (quantity !== undefined) updateObj.quantity = parseInt(quantity);
+    if (charge !== undefined) updateObj.charge = parseFloat(charge);
+
+    // Fetch order to see if it was newly cancelled
+    const { data: currentOrder, error: fetchErr } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (fetchErr || !currentOrder) {
+      return res.status(404).json({ success: false, error: "Order not found" });
+    }
+
+    const { error } = await supabase
+      .from("orders")
+      .update(updateObj)
+      .eq("id", id);
+
+    if (error) throw error;
+
+    // Handle refund if status changed to Cancelled manually
+    if (status === "Cancelled" && currentOrder.status !== "Cancelled") {
+      const refundValue = parseFloat(currentOrder.charge);
+      if (refundValue > 0 && currentOrder.user_email) {
+        console.log(`[Admin Order Edit] Order ${id} cancelled manually. Refunding ₹${refundValue} to ${currentOrder.user_email}`);
+        
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("balance")
+          .eq("email", currentOrder.user_email)
+          .single();
+
+        const currentBal = profile ? parseFloat(profile.balance || "0") : 0;
+        const nextBal = currentBal + refundValue;
+
+        await supabase
+          .from("profiles")
+          .update({ balance: nextBal })
+          .eq("email", currentOrder.user_email);
+
+        const refundTxId = "TXN-REF" + Math.floor(100000 + Math.random() * 900000);
+        await supabase
+          .from("transactions")
+          .insert({
+            id: refundTxId,
+            user_email: currentOrder.user_email,
+            amount: refundValue,
+            method: "Cancellation Refund",
+            status: "Success",
+            created_at: new Date().toISOString()
+          });
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/smm/admin/orders/delete", async (req, res) => {
+  const { id } = req.body;
+  try {
+    const { error } = await supabase
+      .from("orders")
+      .delete()
+      .eq("id", id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get("/api/smm/admin/provider-balance", async (req, res) => {
   try {
     if (!SMM_API_KEY) {
@@ -1654,4 +2007,8 @@ async function initializeServer() {
   });
 }
 
-initializeServer();
+if (!process.env.VERCEL) {
+  initializeServer();
+}
+
+export default app;

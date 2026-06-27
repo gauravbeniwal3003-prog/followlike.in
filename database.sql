@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS public.smm_categories (
   name text primary key,
   custom_margin numeric,
   is_active boolean default true,
-  sort_order integer default 0
+  sort_order integer default 0,
+  custom_name text
 );
 
 CREATE TABLE IF NOT EXISTS public.smm_services (
@@ -92,3 +93,31 @@ CREATE TABLE IF NOT EXISTS public.coupons (
   expires_at timestamp with time zone,
   created_at timestamp with time zone default now()
 );
+
+-- ======================================================================
+-- 🚀 COMPATIBILITY MIGRATION SCRIPT (RUN THIS TO UPGRADE EXISTING TABLES)
+-- ======================================================================
+-- Paste these queries directly into your Supabase SQL Editor to make sure
+-- your existing database is 100% compatible with the latest updates!
+
+-- 1. Ensure latest columns exist in 'profiles'
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS password_hash text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS picture text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS api_key text;
+
+-- 2. Ensure 'custom_name' exists in 'smm_categories'
+ALTER TABLE public.smm_categories ADD COLUMN IF NOT EXISTS custom_name text;
+
+-- 3. Ensure 'refill' and activation columns exist in 'smm_services'
+ALTER TABLE public.smm_services ADD COLUMN IF NOT EXISTS refill boolean default false;
+ALTER TABLE public.smm_services ADD COLUMN IF NOT EXISTS is_active boolean default true;
+ALTER TABLE public.smm_services ADD COLUMN IF NOT EXISTS custom_name text;
+ALTER TABLE public.smm_services ADD COLUMN IF NOT EXISTS custom_description text;
+
+-- 4. Seed new global settings if they do not exist
+INSERT INTO public.global_settings (key, value) VALUES ('profit_markup_percent', '15') ON CONFLICT (key) DO NOTHING;
+INSERT INTO public.global_settings (key, value) VALUES ('landing_video_url', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO public.global_settings (key, value) VALUES ('pinned_category', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO public.global_settings (key, value) VALUES ('starred_services', '[]') ON CONFLICT (key) DO NOTHING;
+

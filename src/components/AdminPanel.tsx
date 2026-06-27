@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { UserSession, SMMService } from '../types';
 import { 
   Users, BarChart3, Settings, ShieldCheck, DollarSign, LayoutList, Layers, 
-  Search, Edit, StopCircle, PlayCircle, RefreshCw, X, Check, Save, Plus, Trash2, Eye, EyeOff
+  Search, Edit, StopCircle, PlayCircle, RefreshCw, X, Check, Save, Plus, Trash2, Eye, EyeOff, Clock, Pin, Star
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
@@ -21,6 +21,16 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
   // Users Data
   const [users, setUsers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  // Orders Data
+  const [orders, setOrders] = useState<any[]>([]);
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<any>(null);
+  const [orderFormStatus, setOrderFormStatus] = useState('Pending');
+  const [orderFormProviderId, setOrderFormProviderId] = useState('');
+  const [orderFormTargetUrl, setOrderFormTargetUrl] = useState('');
+  const [orderFormQuantity, setOrderFormQuantity] = useState('');
+  const [orderFormCharge, setOrderFormCharge] = useState('');
   // Transactions Data
   const [transactions, setTransactions] = useState<any[]>([]);
   // Margin Data
@@ -44,6 +54,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
   const [serviceOverrides, setServiceOverrides] = useState<Record<string, any>>({});
   const [adminServices, setAdminServices] = useState<any[]>([]);
   const [adminCategories, setAdminCategories] = useState<any[]>([]);
+  const [pinnedCategory, setPinnedCategory] = useState<string>('');
   const [providerBalance, setProviderBalance] = useState<{ balance: string; currency: string } | null>(null);
   const [providerError, setProviderError] = useState<string>('');
   const [allServices, setAllServices] = useState<SMMService[]>([]);
@@ -288,6 +299,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
     if (!isAdminAuthenticated) return;
     fetchDashboard();
     fetchUsers();
+    fetchOrders();
     fetchTransactions();
     fetchCategories();
     fetchServices();
@@ -301,6 +313,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
 
   const fetchDashboard = () => fetch(`${API_BASE}/api/smm/admin/dashboard`).then(r => r.json()).then(d => { if (d.success) setDashboardStats(d.stats) });
   const fetchUsers = () => fetch(`${API_BASE}/api/smm/admin/users`).then(r => r.json()).then(d => { if (d.success) setUsers(d.users) });
+  const fetchOrders = () => fetch(`${API_BASE}/api/smm/admin/orders`).then(r => r.json()).then(d => { if (d.success) setOrders(d.orders || []) });
   const fetchTransactions = () => fetch(`${API_BASE}/api/smm/admin/transactions`).then(r => r.json()).then(d => { if(d.success) setTransactions(d.transactions || []) });
   const fetchProviderBalance = () => {
     setProviderError('');
@@ -321,6 +334,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
     if(d.success) {
       setCategoryOverrides(d.categoryOverrides || {});
       setAdminCategories(d.categories || []);
+      setPinnedCategory(d.pinned_category || '');
     }
   });
   const fetchServices = () => fetch(`${API_BASE}/api/smm/admin/services`).then(r => r.json()).then(d => { 
@@ -392,6 +406,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
     const tabs = [
       { id: 'dashboard', label: 'Dashboard', short: 'Dash', icon: <BarChart3 className="w-5 h-5 md:w-4 md:h-4" /> },
       { id: 'users', label: 'Manage Users', short: 'Users', icon: <Users className="w-5 h-5 md:w-4 md:h-4" /> },
+      { id: 'orders', label: 'Manage Orders', short: 'Orders', icon: <Clock className="w-5 h-5 md:w-4 md:h-4" /> },
       { id: 'transactions', label: 'Transactions', short: 'Trans', icon: <DollarSign className="w-5 h-5 md:w-4 md:h-4" /> },
       { id: 'margins', label: 'System Settings', short: 'Settings', icon: <Settings className="w-5 h-5 md:w-4 md:h-4" /> },
       { id: 'categories', label: 'Category Management', short: 'Categories', icon: <Layers className="w-5 h-5 md:w-4 md:h-4" /> },
@@ -446,7 +461,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
         <div className="flex gap-2 relative z-10">
           <button 
             onClick={() => {
-              if (confirm('Regular sync will update all active services from the provider. Continue?')) {
+              if (confirm('Regular sync will update all active services from the provider and sync incomplete orders. Continue?')) {
                 setIsSyncing(true);
                 fetch(`${API_BASE}/api/smm/admin/services/sync`, { 
                   method: 'POST',
@@ -455,11 +470,16 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                   .then(r => r.json())
                   .then(d => { 
                     if (d.success) {
-                      alert(`Sync Complete! ${d.count} services processed.`);
+                      let msg = `Sync Complete! ${d.count} services processed.`;
+                      if (d.ordersProcessed !== undefined && d.ordersProcessed > 0) {
+                        msg += `\n\n[Active Orders Status Sync]\nProcessed: ${d.ordersProcessed}\nUpdated Statuses: ${d.ordersUpdated}\nRefunds Handled: ${d.ordersRefunded}`;
+                      }
+                      alert(msg);
                       fetchDashboard(); 
                       fetchServices(); 
                       fetchCategories();
-                      if (refreshServices) refreshServices(false);
+                      fetchOrders();
+                      if (refreshServices) refreshServices(true);
                     } else {
                       alert('Sync Error: ' + (d.error || 'Unknown error'));
                     }
@@ -476,7 +496,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
           </button>
           <button 
             onClick={() => {
-              if (confirm('WARNING: Force sync will delete all categories and services and re-fetch them from scratch. Proceed?')) {
+              if (confirm('WARNING: Force sync will delete all categories and services, re-fetch them from scratch, and sync incomplete orders. Proceed?')) {
                 setIsSyncing(true);
                 fetch(`${API_BASE}/api/smm/admin/services/sync`, { 
                   method: 'POST', 
@@ -486,10 +506,15 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                   .then(r => r.json())
                   .then(d => { 
                     if (d.success) {
-                      alert(`Force Sync Complete! ${d.count} services re-imported.`);
+                      let msg = `Force Sync Complete! ${d.count} services re-imported.`;
+                      if (d.ordersProcessed !== undefined && d.ordersProcessed > 0) {
+                        msg += `\n\n[Active Orders Status Sync]\nProcessed: ${d.ordersProcessed}\nUpdated Statuses: ${d.ordersUpdated}\nRefunds Handled: ${d.ordersRefunded}`;
+                      }
+                      alert(msg);
                       fetchDashboard(); 
                       fetchServices(); 
                       fetchCategories();
+                      fetchOrders();
                       if (refreshServices) refreshServices(true);
                     } else {
                       alert('Force Sync Error: ' + (d.error || 'Unknown error'));
@@ -629,14 +654,251 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
     );
   };
 
-  const renderTransactions = () => (
-    <div className="space-y-6">
-      <div className="border border-white/5 rounded-2xl bg-white/[0.01] p-6 text-center text-neutral-500 font-mono text-xs">
-        <DollarSign className="w-8 h-8 opacity-20 mx-auto mb-3" />
-        Transaction & Recharge logic will populate here based on real activity logs. No pending manual recharges found right now.
+  const renderTransactions = () => {
+    const sortedTx = [...transactions].sort((a, b) => new Date(b.created_at || b.createdAt).getTime() - new Date(a.created_at || a.createdAt).getTime());
+    
+    return (
+      <div className="space-y-6">
+        <h2 className="text-sm font-bold uppercase font-mono tracking-wider text-neutral-400">Transaction History</h2>
+        {sortedTx.length === 0 ? (
+          <div className="border border-white/5 rounded-2xl bg-white/[0.01] p-6 text-center text-neutral-500 font-mono text-xs">
+            <DollarSign className="w-8 h-8 opacity-20 mx-auto mb-3" />
+            No transaction records found in the database.
+          </div>
+        ) : (
+          <div className="border border-white/5 rounded-2xl bg-white/[0.01] overflow-hidden">
+            <table className="w-full text-left text-xs font-mono">
+              <thead>
+                <tr className="bg-black/40 text-neutral-500 uppercase tracking-wider text-[9px]">
+                  <th className="p-4">Tx ID</th>
+                  <th className="p-4">User</th>
+                  <th className="p-4 text-right">Amount</th>
+                  <th className="p-4">Method</th>
+                  <th className="p-4 text-center">Status</th>
+                  <th className="p-4 text-right">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {sortedTx.map((tx: any) => {
+                  const isRefund = tx.method && tx.method.toLowerCase().includes('refund');
+                  return (
+                    <tr key={tx.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="p-4 font-bold text-white text-[11px]">
+                        {tx.id}
+                      </td>
+                      <td className="p-4 text-neutral-300">
+                        {tx.user_email || tx.userEmail}
+                      </td>
+                      <td className={`p-4 text-right font-bold ${isRefund ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        ₹{tx.amount}
+                      </td>
+                      <td className="p-4 text-neutral-400">
+                        {tx.method}
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded text-[9px] uppercase font-bold border border-emerald-500/20">
+                          {tx.status || 'Success'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right text-neutral-500 text-[10px]">
+                        {new Date(tx.created_at || tx.createdAt).toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
+
+  const openOrderEdit = (order: any) => {
+    setEditingOrder(order);
+    setOrderFormStatus(order.status || 'Pending');
+    setOrderFormProviderId(order.provider_order_id || '');
+    setOrderFormTargetUrl(order.target_url || '');
+    setOrderFormQuantity(String(order.quantity || ''));
+    setOrderFormCharge(String(order.charge || ''));
+    setIsOrderModalOpen(true);
+  };
+
+  const handleSaveOrder = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrder) return;
+
+    fetch(`${API_BASE}/api/smm/admin/orders/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: editingOrder.id,
+        status: orderFormStatus,
+        provider_order_id: orderFormProviderId,
+        target_url: orderFormTargetUrl,
+        quantity: parseInt(orderFormQuantity) || undefined,
+        charge: parseFloat(orderFormCharge) || undefined,
+      })
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          alert('Order updated successfully!');
+          setIsOrderModalOpen(false);
+          fetchOrders();
+          fetchDashboard(); 
+        } else {
+          alert('Error: ' + (d.error || 'Failed to update order'));
+        }
+      })
+      .catch(() => alert('Network error updating order.'));
+  };
+
+  const handleDeleteOrder = (orderId: string) => {
+    if (confirm('Are you absolutely sure you want to delete this order? This action cannot be undone.')) {
+      fetch(`${API_BASE}/api/smm/admin/orders/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: orderId })
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) {
+            alert('Order deleted successfully!');
+            fetchOrders();
+            fetchDashboard();
+          } else {
+            alert('Error: ' + (d.error || 'Failed to delete order'));
+          }
+        })
+        .catch(() => alert('Network error deleting order.'));
+    }
+  };
+
+  const renderOrders = () => {
+    const filtered = orders.filter(o => 
+      String(o.id).toLowerCase().includes(orderSearchQuery.toLowerCase()) ||
+      String(o.user_email || '').toLowerCase().includes(orderSearchQuery.toLowerCase()) ||
+      String(o.provider_order_id || '').toLowerCase().includes(orderSearchQuery.toLowerCase()) ||
+      String(o.target_url || '').toLowerCase().includes(orderSearchQuery.toLowerCase()) ||
+      String(o.service_id || '').toLowerCase().includes(orderSearchQuery.toLowerCase())
+    );
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <div className="relative flex-1 w-full">
+            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <input 
+              value={orderSearchQuery}
+              onChange={e => setOrderSearchQuery(e.target.value)}
+              placeholder="Search by ID, email, service, provider ID, or URL..." 
+              className="w-full pl-10 pr-4 py-3 bg-white/[0.02] border border-white/10 rounded-xl text-white text-xs font-mono focus:border-white focus:outline-none" 
+            />
+          </div>
+          <button 
+            onClick={() => {
+              setIsSyncing(true);
+              fetch(`${API_BASE}/api/smm/admin/services/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                .then(r => r.json())
+                .then(d => {
+                  if (d.success) {
+                    let msg = `Sync complete!`;
+                    if (d.ordersProcessed !== undefined) {
+                      msg += ` Processed ${d.ordersProcessed} active orders, updated ${d.ordersUpdated} statuses, issued ${d.ordersRefunded} refunds.`;
+                    }
+                    alert(msg);
+                    fetchOrders();
+                  } else {
+                    alert('Sync failed: ' + d.error);
+                  }
+                })
+                .catch(() => alert('Sync failed connection.'))
+                .finally(() => setIsSyncing(false));
+            }}
+            disabled={isSyncing}
+            className="px-4 py-3 bg-red-500 hover:bg-red-600 rounded-xl border border-red-500 text-white font-bold text-xs uppercase tracking-wider font-mono flex items-center gap-2"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} /> Sync All Active Orders
+          </button>
+        </div>
+
+        <div className="border border-white/5 rounded-2xl bg-white/[0.01] overflow-hidden">
+          <table className="w-full text-left text-xs font-mono">
+            <thead>
+              <tr className="bg-black/40 text-neutral-500 uppercase tracking-wider text-[9px]">
+                <th className="p-4">Order ID / Date</th>
+                <th className="p-4">User</th>
+                <th className="p-4">Service / Provider ID</th>
+                <th className="p-4">URL & Qty</th>
+                <th className="p-4 text-right">Charge</th>
+                <th className="p-4 text-center">Status</th>
+                <th className="p-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-8 text-center text-neutral-500">
+                    No orders found.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map(o => {
+                  let statusColor = 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20';
+                  if (o.status === 'Completed') statusColor = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                  else if (o.status === 'Cancelled') statusColor = 'bg-red-500/10 text-red-500 border-red-500/20';
+                  else if (o.status === 'In Progress' || o.status === 'Processing') statusColor = 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+                  
+                  return (
+                    <tr key={o.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="p-4">
+                        <div className="font-bold text-white text-[11px]">{o.id}</div>
+                        <div className="text-[9px] text-neutral-500 mt-0.5">{new Date(o.created_at || o.createdAt).toLocaleString('en-IN')}</div>
+                      </td>
+                      <td className="p-4 text-neutral-300 max-w-[150px] truncate" title={o.user_email || o.userEmail}>
+                        {o.user_email || o.userEmail}
+                      </td>
+                      <td className="p-4">
+                        <div className="text-white text-[10px]">Service ID: <span className="font-bold">{o.service_id}</span></div>
+                        <div className="text-[10px] text-neutral-500 mt-0.5">SMM ID: <span className="font-bold">{o.provider_order_id || 'N/A'}</span></div>
+                      </td>
+                      <td className="p-4 max-w-[200px]">
+                        <div className="text-neutral-300 truncate" title={o.target_url}>{o.target_url}</div>
+                        <div className="text-[10px] text-neutral-500 mt-0.5">Qty: <span className="font-bold text-neutral-400">{o.quantity}</span></div>
+                      </td>
+                      <td className="p-4 text-right text-emerald-400 font-bold">
+                        ₹{o.charge}
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2 py-1 rounded text-[9px] uppercase font-bold border ${statusColor}`}>
+                          {o.status || 'Pending'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right flex gap-2 justify-end">
+                        <button 
+                          onClick={() => openOrderEdit(o)}
+                          className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-neutral-300 hover:text-white transition-all text-[10px] flex items-center gap-1"
+                        >
+                          <Edit className="w-3 h-3" /> Edit
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteOrder(o.id)}
+                          className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 rounded border border-red-500/20 text-red-400 hover:text-red-300 transition-all text-[10px] flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   const renderMargin = () => {
     const handleSaveGlobal = () => {
@@ -791,12 +1053,16 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                 const catName = catItem.name;
                 const isActive = catItem.is_active !== false;
                 return (
-                  <tr key={catName} className="hover:bg-white/[0.02] transition-colors">
+                  <tr key={catName} className={`hover:bg-white/[0.02] transition-colors ${pinnedCategory === catName ? 'bg-amber-500/[0.02] border-l-2 border-amber-500' : ''}`}>
                     <td className="p-4 text-neutral-400 font-medium truncate max-w-xs" title={catName}>
-                      {catName}
+                      <div className="flex items-center gap-1.5">
+                        {pinnedCategory === catName && <Pin className="w-3 h-3 text-amber-400 fill-amber-400 rotate-45 flex-shrink-0" />}
+                        <span className={pinnedCategory === catName ? 'text-amber-400 font-bold' : ''}>{catName}</span>
+                      </div>
                     </td>
                     <td className="p-4 font-bold text-white">
                       {catItem.custom_name || <span className="text-neutral-500 italic">None</span>}
+                      {pinnedCategory === catName && <span className="ml-2 text-[9px] px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded font-bold uppercase tracking-wider font-mono">Pinned</span>}
                     </td>
                     <td className="p-4 text-center">
                       <button 
@@ -827,6 +1093,34 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button 
+                          onClick={() => {
+                            const newPinned = pinnedCategory === catName ? '' : catName;
+                            fetch(`${API_BASE}/api/smm/admin/categories/pin`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ name: newPinned })
+                            })
+                            .then(r => r.json())
+                            .then(d => {
+                              if (d.success) {
+                                setPinnedCategory(d.pinned_category || '');
+                                if (refreshServices) refreshServices(false);
+                              } else {
+                                alert('Error pinning category: ' + d.error);
+                              }
+                            });
+                          }}
+                          className={`px-2 py-1 rounded border text-[10px] flex items-center gap-1 transition-all ${
+                            pinnedCategory === catName 
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20' 
+                              : 'bg-white/5 hover:bg-white/10 text-neutral-400 border-white/10 hover:text-white'
+                          }`}
+                          title={pinnedCategory === catName ? 'Unpin category' : 'Pin this category to top'}
+                        >
+                          <Pin className={`w-3 h-3 ${pinnedCategory === catName ? 'fill-amber-400 rotate-45 text-amber-400' : ''}`} /> 
+                          {pinnedCategory === catName ? 'Pinned' : 'Pin'}
+                        </button>
                         <button 
                           onClick={() => openCategoryEdit(catItem)}
                           className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-neutral-300 hover:text-white transition-all text-[10px] flex items-center gap-1"
@@ -932,8 +1226,8 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
         </div>
 
         {/* Services table */}
-        <div className="border border-white/5 rounded-2xl bg-white/[0.01] overflow-hidden">
-          <table className="w-full text-left text-xs font-mono">
+        <div className="border border-white/5 rounded-2xl bg-white/[0.01] overflow-x-auto">
+          <table className="w-full text-left text-xs font-mono min-w-[950px]">
             <thead>
               <tr className="bg-black/40 text-neutral-500 uppercase tracking-wider text-[9px]">
                 <th className="p-4 w-16">ID</th>
@@ -941,15 +1235,14 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                 <th className="p-4 text-right">Provider Cost (₹)</th>
                 <th className="p-4 text-right">Margin Override</th>
                 <th className="p-4 text-center">Min / Max</th>
-                <th className="p-4 text-center">Refill</th>
                 <th className="p-4 text-center">Status</th>
-                <th className="p-4 text-right">Actions</th>
+                <th className="p-4 text-right pr-6">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {filteredServices.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-neutral-500">
+                  <td colSpan={7} className="p-8 text-center text-neutral-500">
                     No services found matching the criteria.
                   </td>
                 </tr>
@@ -957,11 +1250,13 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
               {filteredServices.slice(0, 300).map(srv => {
                 const isActive = srv.is_active !== false;
                 return (
-                  <tr key={srv.service_id} className="hover:bg-white/[0.02] transition-colors">
+                  <tr key={srv.service_id} className={`hover:bg-white/[0.02] transition-colors ${srv.is_starred ? 'bg-amber-500/[0.01] border-l-2 border-amber-500/50' : ''}`}>
                     <td className="p-4 font-mono font-bold text-neutral-500">{srv.service_id}</td>
                     <td className="p-4 max-w-md">
-                      <div className="font-bold text-white truncate" title={srv.custom_name || srv.api_name}>
-                        {srv.custom_name || srv.api_name}
+                      <div className="font-bold text-white truncate flex items-center gap-1.5" title={srv.custom_name || srv.api_name}>
+                        {srv.is_starred && <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />}
+                        <span>{srv.custom_name || srv.api_name}</span>
+                        {srv.is_starred && <span className="text-[8px] bg-amber-500/15 text-amber-400 px-1 py-0.2 rounded font-bold tracking-wider font-mono uppercase">Featured</span>}
                       </div>
                       <div className="text-[10px] text-neutral-400 mt-0.5 line-clamp-1" title={srv.custom_description}>
                         {srv.custom_description || <span className="text-neutral-600 italic">No description</span>}
@@ -985,11 +1280,6 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                       {srv.min_order ?? 10} / {srv.max_order ?? 10000}
                     </td>
                     <td className="p-4 text-center">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${srv.refill ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10' : 'bg-neutral-500/10 text-neutral-500 border border-white/5'}`}>
-                        {srv.refill ? 'Yes' : 'No'}
-                      </span>
-                    </td>
-                    <td className="p-4 text-center">
                       <button 
                         onClick={() => {
                           fetch(`${API_BASE}/api/smm/admin/services/update`, {
@@ -1010,8 +1300,36 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                         {!isActive ? 'Disabled' : 'Active'}
                       </button>
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right font-sans">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button 
+                          onClick={() => {
+                            const newStarred = !srv.is_starred;
+                            fetch(`${API_BASE}/api/smm/admin/services/star`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ service_id: srv.service_id, is_starred: newStarred })
+                            })
+                            .then(r => r.json())
+                            .then(d => {
+                              if (d.success) {
+                                fetchServices();
+                                if (refreshServices) refreshServices(false);
+                              } else {
+                                alert('Error starring service: ' + d.error);
+                              }
+                            });
+                          }}
+                          className={`px-2 py-1 rounded border text-[10px] flex items-center gap-1 transition-all ${
+                            srv.is_starred 
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20' 
+                              : 'bg-white/5 hover:bg-white/10 text-neutral-400 border-white/10 hover:text-white'
+                          }`}
+                          title={srv.is_starred ? 'Remove from Featured' : 'Mark as Featured (Star)'}
+                        >
+                          <Star className={`w-3 h-3 ${srv.is_starred ? 'fill-amber-400 text-amber-400' : ''}`} /> 
+                          {srv.is_starred ? 'Featured' : 'Star'}
+                        </button>
                         <button 
                           onClick={() => openServiceEdit(srv)}
                           className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-neutral-300 hover:text-white transition-all text-[10px] flex items-center gap-1"
@@ -1051,6 +1369,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
           <div className="relative z-10 max-w-6xl mx-auto">
             {activeTab === 'dashboard' && renderDashboard()}
             {activeTab === 'users' && renderUsers()}
+            {activeTab === 'orders' && renderOrders()}
             {activeTab === 'transactions' && renderTransactions()}
             {activeTab === 'margins' && renderMargin()}
             {activeTab === 'categories' && renderCategories()}
@@ -1348,26 +1667,7 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Refill */}
-                <div className="flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/5">
-                  <div>
-                    <span className="block text-xs font-bold text-white uppercase font-mono">Refill Guarantee</span>
-                    <span className="block text-[10px] text-neutral-400">Enable client manual refill buttons</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSrvFormRefill(!srvFormRefill)}
-                    className={`px-4 py-1.5 rounded-lg text-[10px] font-mono font-bold uppercase border transition-all ${
-                      srvFormRefill 
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.15)]' 
-                        : 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20'
-                    }`}
-                  >
-                    {srvFormRefill ? 'Enabled' : 'Disabled'}
-                  </button>
-                </div>
-
+              <div>
                 {/* Service Status */}
                 <div className="flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/5">
                   <div>
@@ -1402,6 +1702,113 @@ export default function AdminPanel({ session, globalSettings, onUpdateSettings, 
                   className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs uppercase font-mono font-bold transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)]"
                 >
                   Save Service
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Order Edit Modal */}
+      {isOrderModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-white/5 p-5 bg-black/30">
+              <h3 className="text-sm font-bold uppercase font-mono tracking-wider text-white">
+                Edit Order: {editingOrder?.id}
+              </h3>
+              <button onClick={() => setIsOrderModalOpen(false)} className="text-neutral-400 hover:text-white p-1 hover:bg-white/5 rounded-lg transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveOrder} className="p-6 space-y-4">
+              <div>
+                <label className="block text-[10px] uppercase font-mono text-neutral-400 mb-1">
+                  Status
+                </label>
+                <select
+                  value={orderFormStatus}
+                  onChange={e => setOrderFormStatus(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-black border border-white/10 rounded-xl text-white font-mono text-xs focus:border-white focus:outline-none"
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+                {orderFormStatus === 'Cancelled' && editingOrder?.status !== 'Cancelled' && (
+                  <p className="text-[10px] text-amber-500 font-mono mt-1">
+                    * Changing status to Cancelled will automatically refund ₹{editingOrder?.charge} to the user.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase font-mono text-neutral-400 mb-1">
+                  Provider Order ID
+                </label>
+                <input
+                  type="text"
+                  value={orderFormProviderId}
+                  onChange={e => setOrderFormProviderId(e.target.value)}
+                  placeholder="e.g. 589234"
+                  className="w-full px-4 py-2.5 bg-black border border-white/10 rounded-xl text-white font-mono text-xs focus:border-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase font-mono text-neutral-400 mb-1">
+                  Target URL
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={orderFormTargetUrl}
+                  onChange={e => setOrderFormTargetUrl(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-black border border-white/10 rounded-xl text-white font-mono text-xs focus:border-white focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-neutral-400 mb-1">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={orderFormQuantity}
+                    onChange={e => setOrderFormQuantity(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-black border border-white/10 rounded-xl text-white font-mono text-xs focus:border-white focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-neutral-400 mb-1">
+                    Charge (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={orderFormCharge}
+                    onChange={e => setOrderFormCharge(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-black border border-white/10 rounded-xl text-white font-mono text-xs focus:border-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setIsOrderModalOpen(false)}
+                  className="flex-1 py-2.5 border border-white/10 text-neutral-400 hover:text-white rounded-xl text-xs uppercase font-mono transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs uppercase font-mono font-bold transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)]"
+                >
+                  Save Order
                 </button>
               </div>
             </form>

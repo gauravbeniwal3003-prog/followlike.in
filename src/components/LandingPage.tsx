@@ -17,7 +17,9 @@ import {
   HelpCircle,
   Clock,
   Layers,
-  MessageSquare
+  MessageSquare,
+  Search,
+  Star
 } from 'lucide-react';
 import { SMMService } from '../types';
 import GmailAuthModal from './GmailAuthModal';
@@ -28,6 +30,37 @@ interface LandingPageProps {
   userEmail?: string;
   onLoginSuccess: (session: any) => void;
   landingVideoUrl?: string;
+}
+
+function getYoutubeEmbedUrl(url: string): string {
+  if (!url) return '';
+  if (url.includes('youtube.com/embed/')) return url;
+  
+  let videoId = '';
+  try {
+    if (url.includes('youtu.be/')) {
+      videoId = url.split('youtu.be/')[1]?.split('?')[0] || '';
+    } else if (url.includes('youtube.com/watch')) {
+      const urlParams = new URLSearchParams(url.split('?')[1]);
+      videoId = urlParams.get('v') || '';
+    } else if (url.includes('youtube.com/v/')) {
+      videoId = url.split('youtube.com/v/')[1]?.split('?')[0] || '';
+    } else {
+      videoId = url.trim();
+    }
+  } catch (e) {
+    videoId = url.trim();
+  }
+  
+  return `https://www.youtube.com/embed/${videoId}`;
+}
+
+function getInrRate(service: SMMService): number {
+  if (!service) return 0;
+  if (typeof service.id === 'string' && !service.id.includes('-')) {
+    return service.ratePer1000;
+  }
+  return Math.round(service.ratePer1000 * 80);
 }
 
 export default function LandingPage({
@@ -42,9 +75,12 @@ export default function LandingPage({
   const [customFaqAnswer, setCustomFaqAnswer] = useState<string | null>(null);
   const [isGmailModalOpen, setIsGmailModalOpen] = useState(false);
 
+  // Get only starred services for landing page
+  const starredServices = servicesCatalog.filter(service => service.is_starred);
+
   // Extract unique categories with priority
   const categories = (() => {
-    const rawCats = Array.from(new Set(servicesCatalog.map(s => s.category)));
+    const rawCats = Array.from(new Set(starredServices.map(s => s.category)));
     const priority = ['Instagram', 'YouTube', 'Twitter', 'TikTok'];
     const sorted = [...rawCats].sort((a, b) => {
       const idxA = priority.findIndex(p => a.toLowerCase().includes(p.toLowerCase()));
@@ -58,7 +94,7 @@ export default function LandingPage({
   })();
 
   // Filter services
-  const filteredServices = servicesCatalog.filter(service => {
+  const filteredServices = starredServices.filter(service => {
     const matchesCategory = activeCategory === 'All' || service.category === activeCategory;
     const matchesSearch = service.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (service.description && service.description.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -228,36 +264,158 @@ export default function LandingPage({
         </div>
       </main>
 
+      {/* Demo Video Section */}
+      {landingVideoUrl && (
+        <section className="max-w-7xl mx-auto px-6 sm:px-8 pb-16 relative z-10">
+          <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-6 sm:p-8 space-y-6 backdrop-blur-md">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-bold font-mono uppercase tracking-[0.2em] text-white/50">Showcase &amp; Tutorial</span>
+                <h2 className="text-xl sm:text-2xl font-display font-black text-white/95 mt-1 tracking-tight">Watch Our Live Demo</h2>
+                <p className="text-xs sm:text-sm text-neutral-400 mt-1">Check out our latest guides, tutorials, and system walkthroughs.</p>
+              </div>
+            </div>
+            
+            <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
+              <iframe
+                src={getYoutubeEmbedUrl(landingVideoUrl)}
+                title="FollowLike Demo Video"
+                className="absolute inset-0 h-full w-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              ></iframe>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Featured Deals Section */}
-      <section className="max-w-7xl mx-auto px-6 sm:px-8 pb-16 relative z-10">
-        <div className="flex items-center gap-2 mb-6">
-          <Sparkles className="w-4 h-4 text-emerald-400" />
-          <h2 className="text-sm font-mono uppercase tracking-widest text-emerald-400 font-bold">Featured Deals</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {['view', 'follower', 'like'].map(type => {
-            const match = servicesCatalog
-              .filter(s => s.category.toLowerCase().includes('instagram') && s.name.toLowerCase().includes(type))
-              .sort((a,b) => a.ratePer1000 - b.ratePer1000)[0];
-            
-            if (!match) return null;
-            
-            return (
-              <div key={match.id} className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors cursor-pointer" onClick={() => setIsGmailModalOpen(true)}>
-                <div className="flex justify-between items-start mb-4">
-                  <div className="px-2 py-1 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase rounded font-mono border border-emerald-500/30">
-                    Cheapest {type}s
+      {starredServices.length > 0 && (
+        <section className="max-w-7xl mx-auto px-6 sm:px-8 pb-16 relative z-10">
+          <div className="flex items-center gap-2 mb-6">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <h2 className="text-sm font-mono uppercase tracking-widest text-amber-400 font-bold">Featured Deals</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {starredServices.slice(0, 6).map(service => {
+              return (
+                <div key={service.id} className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors cursor-pointer" onClick={() => setIsGmailModalOpen(true)}>
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="px-2 py-1 bg-amber-500/20 text-amber-400 text-[10px] font-bold uppercase rounded font-mono border border-amber-500/30 flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                      Featured Deal
+                    </div>
+                    <span className="text-[10px] text-neutral-500 font-mono">ID: {service.id}</span>
                   </div>
-                  <Instagram className="w-5 h-5 text-neutral-400" />
+                  <h3 className="text-sm font-bold text-white mb-2 line-clamp-2">{service.name}</h3>
+                  <div className="flex justify-between items-end">
+                    <div className="flex items-end gap-2">
+                      <span className="text-2xl font-black text-white font-display">₹{getInrRate(service).toFixed(2)}</span>
+                      <span className="text-[10px] text-neutral-500 font-mono mb-1 uppercase">/ 1000</span>
+                    </div>
+                    <span className="text-[9px] text-neutral-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/5 truncate max-w-[120px]" title={service.category}>
+                      {service.category}
+                    </span>
+                  </div>
                 </div>
-                <h3 className="text-sm font-bold text-white mb-2 line-clamp-2">{match.name}</h3>
-                <div className="flex items-end gap-2">
-                  <span className="text-2xl font-black text-white font-display">₹{match.ratePer1000.toFixed(2)}</span>
-                  <span className="text-[10px] text-neutral-500 font-mono mb-1 uppercase">/ 1000</span>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Services Catalog Section */}
+      <section id="catalog" className="max-w-7xl mx-auto px-6 sm:px-8 pb-16 relative z-10 border-t border-white/5 pt-16">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
+          <div>
+            <span className="text-xs font-mono uppercase tracking-widest text-neutral-500 font-bold">Featured Catalog</span>
+            <h2 className="text-2xl sm:text-3xl font-display font-black text-white mt-1">Featured Services &amp; Rates</h2>
+            <p className="text-xs sm:text-sm text-neutral-400 mt-1">Handpicked best-value services, fully configured with safety margins.</p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            {/* Search */}
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
+                <Search className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                placeholder="Search services..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full sm:w-64 pl-9 pr-4 py-2 text-xs text-white rounded-xl bg-white/[0.03] border border-white/10 focus:border-white focus:outline-none focus:ring-1 focus:ring-white transition-all placeholder-neutral-600 font-medium"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Categories wrap row */}
+        <div className="flex flex-wrap gap-1.5 mb-8">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all cursor-pointer ${
+                activeCategory === cat
+                  ? 'bg-white text-black font-semibold'
+                  : 'text-neutral-400 hover:text-white bg-white/[0.02] border border-white/5'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* Services List Table/Grid */}
+        <div className="grid grid-cols-1 gap-4">
+          {filteredServices.length === 0 ? (
+            <div className="text-center py-12 border border-white/5 rounded-2xl bg-white/[0.01]">
+              <p className="text-xs text-neutral-500 font-mono">No services match your search or category filter.</p>
+            </div>
+          ) : (
+            filteredServices.slice(0, 50).map((service) => (
+              <div key={service.id} className="bg-white/[0.01] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-all flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/10 font-mono text-[9px] uppercase text-neutral-400">
+                      {service.category}
+                    </span>
+                    <span className="text-[10px] text-neutral-600 font-mono">ID: {service.id}</span>
+                  </div>
+                  <h4 className="text-sm font-semibold text-white tracking-tight">{service.name}</h4>
+                  {service.description && (
+                    <p className="text-xs text-neutral-400 leading-relaxed max-w-2xl">{service.description}</p>
+                  )}
+                  <div className="flex flex-wrap gap-4 text-[10px] font-mono text-neutral-500">
+                    <span>MIN: {service.min.toLocaleString()}</span>
+                    <span>MAX: {service.max.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-4 pt-4 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                  <div>
+                    <div className="text-[9px] text-neutral-500 font-mono uppercase tracking-wider">Rate / 1k</div>
+                    <div className="text-xl font-bold font-mono text-white font-bold">₹{getInrRate(service).toFixed(2)}</div>
+                  </div>
+                  <button
+                    onClick={() => setIsGmailModalOpen(true)}
+                    className="px-4 py-2 bg-white text-black font-semibold text-xs rounded-xl hover:bg-neutral-200 transition-all flex items-center cursor-pointer"
+                  >
+                    Order Now
+                    <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
+                  </button>
                 </div>
               </div>
-            );
-          })}
+            ))
+          )}
+          {filteredServices.length > 50 && (
+            <div className="text-center pt-4">
+              <p className="text-[11px] text-neutral-500 font-mono">
+                Showing first 50 services. Please sign in to see the full list of {filteredServices.length} services with detailed filters.
+              </p>
+            </div>
+          )}
         </div>
       </section>
 

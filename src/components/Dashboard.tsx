@@ -29,7 +29,8 @@ import {
   X,
   MessageSquare,
   ChevronDown,
-  Check
+  Check,
+  Pin
 } from 'lucide-react';
 import { SMMService, SMMOrder, Transaction, UserSession } from '../types';
 import { 
@@ -1965,7 +1966,10 @@ export default function Dashboard({
                           }}
                           className="w-full flex items-center justify-between px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 hover:border-white/20 focus:border-white focus:outline-none transition-all text-left font-sans cursor-pointer"
                         >
-                          <span className="truncate">
+                          <span className="truncate flex items-center gap-1.5">
+                            {selectedCategory && servicesCatalog.find(s => s.category === selectedCategory)?.categorySortOrder === -1000000 && (
+                              <Pin className="w-3.5 h-3.5 text-amber-400 fill-amber-400 rotate-45 shrink-0" />
+                            )}
                             {selectedCategory ? `${selectedCategory} Services` : 'Select a Category'}
                           </span>
                           <ChevronDown className={`w-4 h-4 ml-2 shrink-0 text-neutral-500 transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180 text-white' : ''}`} />
@@ -1978,8 +1982,8 @@ export default function Dashboard({
                             <div 
                               className="fixed inset-0 z-40 bg-transparent" 
                               onClick={() => {
-                                setIsCategoryDropdownOpen(false);
-                                setCategorySearchQuery('');
+                                  setIsCategoryDropdownOpen(false);
+                                  setCategorySearchQuery('');
                               }} 
                             />
                             
@@ -2025,6 +2029,7 @@ export default function Dashboard({
                                   }
                                   return filtered.map(cat => {
                                     const isSelected = cat === selectedCategory;
+                                    const isPinned = servicesCatalog.find(s => s.category === cat)?.categorySortOrder === -1000000;
                                     return (
                                       <button
                                         key={cat}
@@ -2040,7 +2045,11 @@ export default function Dashboard({
                                             : 'text-neutral-400 hover:text-white hover:bg-white/[0.04]'
                                         }`}
                                       >
-                                        <span className="truncate">{cat} Services</span>
+                                        <span className="truncate flex items-center gap-1.5">
+                                          {isPinned && <Pin className="w-3 h-3 text-amber-400 fill-amber-400 rotate-45 shrink-0" />}
+                                          <span>{cat} Services</span>
+                                          {isPinned && <span className="text-[8px] bg-amber-500/15 text-amber-400 px-1 py-0.2 rounded uppercase font-bold tracking-wider">Pinned</span>}
+                                        </span>
                                         {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
                                       </button>
                                     );

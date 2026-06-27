@@ -30,6 +30,7 @@ export interface SMMService {
   min: number;
   max: number;
   description?: string;
+  is_starred?: boolean;
 }
 
 export type OrderStatus = 'Pending' | 'In Progress' | 'Completed' | 'Cancelled';
