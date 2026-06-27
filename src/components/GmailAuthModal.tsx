@@ -3,6 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { Mail, Phone, Lock, Eye, EyeOff, Shield, User, RefreshCw, CheckCircle } from 'lucide-react';
 import { UserSession } from '../types';
 
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+
 interface GmailAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -28,6 +34,7 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Handle standard reset
   useEffect(() => {
     if (!isOpen) {
       setMode('signin');
@@ -42,6 +49,90 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
       setLoading(false);
     }
   }, [isOpen]);
+
+  // Load and initialize Google Identity Services
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const clientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "188819967487-2tk0hgu4p5m3eo2npummaqq0523cehh0.apps.googleusercontent.com";
+
+    const initializeGoogleSignIn = () => {
+      if (!clientId) {
+        console.warn("VITE_GOOGLE_CLIENT_ID environment variable is not defined.");
+        return;
+      }
+
+      try {
+        if (window.google?.accounts?.id) {
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: handleGoogleCredentialResponse,
+            auto_select: false,
+            cancel_on_tap_outside: true,
+          });
+
+          const buttonDiv = document.getElementById('google-signin-button-container');
+          if (buttonDiv) {
+            window.google.accounts.id.renderButton(
+              buttonDiv,
+              { 
+                theme: 'filled_black', 
+                size: 'large', 
+                text: 'signin_with', 
+                width: '320', 
+                shape: 'pill' 
+              }
+            );
+          }
+        }
+      } catch (err) {
+        console.error("Failed to initialize Google Sign In:", err);
+      }
+    };
+
+    if (!document.getElementById('google-gsi-client')) {
+      const script = document.createElement('script');
+      script.id = 'google-gsi-client';
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initializeGoogleSignIn;
+      document.body.appendChild(script);
+    } else {
+      // Small timeout to ensure container is fully rendered in DOM
+      const timer = setTimeout(initializeGoogleSignIn, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, mode]);
+
+  const handleGoogleCredentialResponse = async (response: any) => {
+    setError('');
+    setSuccessMsg('');
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: response.credential })
+      });
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        setError(resData.error || 'Google authentication failed.');
+        setLoading(false);
+        return;
+      }
+      
+      setSuccessMsg('Signed in successfully with Google!');
+      setTimeout(() => {
+        onSuccess(resData.user);
+        onClose();
+      }, 1000);
+    } catch (err) {
+      console.error("Google Auth API Error:", err);
+      setError('Connection to authentication server failed.');
+      setLoading(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -416,6 +507,17 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
               </div>
             </form>
           )}
+
+          {/* OR separator and Google Sign-In */}
+          <div className="my-5 flex items-center justify-center gap-3">
+            <div className="h-[1px] flex-1 bg-white/10"></div>
+            <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider font-mono">OR CONTINUE WITH</span>
+            <div className="h-[1px] flex-1 bg-white/10"></div>
+          </div>
+
+          <div className="w-full flex justify-center mb-2">
+            <div id="google-signin-button-container" className="flex justify-center w-full min-h-[44px]"></div>
+          </div>
 
           {/* Bottom links */}
           <div className="flex items-center justify-between pt-5 mt-5 border-t border-white/5 text-[10px] text-neutral-500">

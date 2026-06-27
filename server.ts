@@ -1487,6 +1487,133 @@ app.post("/api/auth/signin", async (req, res) => {
   }
 });
 
+// Google Authentication
+app.post("/api/auth/google", async (req, res) => {
+  const { credential } = req.body;
+  if (!credential) {
+    return res.status(400).json({ success: false, error: "Missing Google credential token" });
+  }
+
+  try {
+    // 1. Verify token with Google's tokeninfo API
+    const googleVerifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
+    const verifyRes = await fetch(googleVerifyUrl);
+    if (!verifyRes.ok) {
+      return res.status(400).json({ success: false, error: "Invalid Google credential token" });
+    }
+
+    const payload = await verifyRes.json();
+    const email = payload.email;
+    const name = payload.name;
+    const picture = payload.picture;
+
+    if (!email) {
+      return res.status(400).json({ success: false, error: "Google account does not provide an email address" });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 2. Check if a profile already exists with this email
+    let { data: user, error: fetchError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("email", cleanEmail)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error("Supabase user check error:", fetchError);
+      return res.status(500).json({ success: false, error: "Database error during lookup" });
+    }
+
+    const is_admin = cleanEmail === "gauravbeniwal30003@gmail.com";
+
+    if (user) {
+      // User already exists! Open the same account (prevent duplicates)
+      const updateData: any = {};
+      let needsUpdate = false;
+      if (!user.picture && picture) {
+        updateData.picture = picture;
+        needsUpdate = true;
+      }
+      if (!user.name && name) {
+        updateData.name = name;
+        needsUpdate = true;
+      }
+      if (is_admin && !user.is_admin) {
+        updateData.is_admin = true;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        const { data: updatedUser } = await supabase
+          .from("profiles")
+          .update(updateData)
+          .eq("id", user.id)
+          .select()
+          .maybeSingle();
+        if (updatedUser) {
+          user = updatedUser;
+        }
+      }
+
+      return res.json({
+        success: true,
+        user: {
+          email: user.email,
+          phone: user.phone,
+          name: user.name,
+          picture: user.picture || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name || "")}&backgroundColor=000000&color=ffffff`,
+          balance: parseFloat(user.balance),
+          apiKey: user.api_key,
+          isAdmin: user.is_admin || is_admin,
+        }
+      });
+    }
+
+    // 3. User does NOT exist, create a new profile linked with Google
+    const initialBalance = 0;
+    const apiKey = "smm_KEY" + crypto.randomBytes(6).toString("hex").toUpperCase();
+    const pic = picture || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || cleanEmail.split("@")[0])}&backgroundColor=000000&color=ffffff`;
+
+    const { data: newUser, error: insertError } = await supabase
+      .from("profiles")
+      .insert({
+        email: cleanEmail,
+        phone: null, // Left as null to avoid uniqueness conflicts
+        password_hash: null, // Password is null for pure OAuth accounts
+        name: name || cleanEmail.split("@")[0],
+        picture: pic,
+        balance: initialBalance,
+        api_key: apiKey,
+        is_admin,
+      })
+      .select()
+      .maybeSingle();
+
+    if (insertError || !newUser) {
+      console.error("Google user insertion error:", insertError);
+      return res.status(500).json({ success: false, error: insertError?.message || "Failed to create Google-linked profile" });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        email: newUser.email,
+        phone: newUser.phone,
+        name: newUser.name,
+        picture: newUser.picture,
+        balance: parseFloat(newUser.balance),
+        apiKey: newUser.api_key,
+        isAdmin: newUser.is_admin,
+      }
+    });
+
+  } catch (err: any) {
+    console.error("Google auth handler error:", err);
+    res.status(500).json({ success: false, error: err.message || "Failed to authenticate with Google" });
+  }
+});
+
 // === ADMIN USERS & DATA CONTROL ===
 
 // Admin Login

@@ -134,27 +134,39 @@ export default function App() {
         <Route 
           path="/admin" 
           element={
-            <AdminPanel 
-              session={session} 
-              globalSettings={globalSettings} 
-              onUpdateSettings={(newSet: any) => setGlobalSettings(newSet)} 
-              refreshServices={refreshServices}
-            />
+            session ? (
+              session.isAdmin ? (
+                <AdminPanel 
+                  session={session} 
+                  globalSettings={globalSettings} 
+                  onUpdateSettings={(newSet: any) => setGlobalSettings(newSet)} 
+                  refreshServices={refreshServices}
+                />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            ) : (
+              <Navigate to="/" replace />
+            )
           } 
         />
         <Route 
           path="/" 
           element={
             session ? (
-              <Dashboard
-                session={session}
-                onLogout={handleLogout}
-                servicesCatalog={services}
-                globalSettings={globalSettings}
-                onUpdateSettings={(newSet) => setGlobalSettings(newSet)}
-                refreshServices={refreshServices}
-                refreshingServices={refreshing}
-              />
+              session.isAdmin ? (
+                <Navigate to="/admin" replace />
+              ) : (
+                <Dashboard
+                  session={session}
+                  onLogout={handleLogout}
+                  servicesCatalog={services}
+                  globalSettings={globalSettings}
+                  onUpdateSettings={(newSet) => setGlobalSettings(newSet)}
+                  refreshServices={refreshServices}
+                  refreshingServices={refreshing}
+                />
+              )
             ) : (
               <LandingPage
                 servicesCatalog={services}
@@ -166,13 +178,13 @@ export default function App() {
             )
           } 
         />
-        <Route path="/home" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
-        <Route path="/new-order" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
-        <Route path="/orders" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
-        <Route path="/services" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
-        <Route path="/funds" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
-        <Route path="/profile" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
-        <Route path="/support" element={session ? <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} /> : <Navigate to="/" replace />} />
+        <Route path="/home" element={session ? (session.isAdmin ? <Navigate to="/admin" replace /> : <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} />) : <Navigate to="/" replace />} />
+        <Route path="/new-order" element={session ? (session.isAdmin ? <Navigate to="/admin" replace /> : <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} />) : <Navigate to="/" replace />} />
+        <Route path="/orders" element={session ? (session.isAdmin ? <Navigate to="/admin" replace /> : <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} />) : <Navigate to="/" replace />} />
+        <Route path="/services" element={session ? (session.isAdmin ? <Navigate to="/admin" replace /> : <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} />) : <Navigate to="/" replace />} />
+        <Route path="/funds" element={session ? (session.isAdmin ? <Navigate to="/admin" replace /> : <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} />) : <Navigate to="/" replace />} />
+        <Route path="/profile" element={session ? (session.isAdmin ? <Navigate to="/admin" replace /> : <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} />) : <Navigate to="/" replace />} />
+        <Route path="/support" element={session ? (session.isAdmin ? <Navigate to="/admin" replace /> : <Dashboard session={session} onLogout={handleLogout} servicesCatalog={services} globalSettings={globalSettings} onUpdateSettings={(newSet) => setGlobalSettings(newSet)} refreshServices={refreshServices} refreshingServices={refreshing} />) : <Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
