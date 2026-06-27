@@ -1,6 +1,6 @@
 {
-  "name": "SMM Panel",
-  "description": "A high-performance, responsive SMM panel styled with a Clean Minimalism design, featuring a luxury monochrome high-contrast template, complete with simulated Google OAuth signup, order dashboard, and API integration.",
+  "name": "FollowLike",
+  "description": "A high-performance, responsive SMM panel styled with a Clean Minimalism design, featuring a luxury monochrome high-contrast panel, complete with Google-style signup, order dashboard, and API integration.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

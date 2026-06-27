@@ -195,3 +195,82 @@ body {
   color: #d1d5db !important;
 }
 
+/* Premium Looping 2D Symbols Micro-animations */
+@keyframes loop-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes loop-pulse-gentle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+@keyframes loop-clock {
+  0%, 100% { transform: rotate(-15deg); }
+  50% { transform: rotate(15deg); }
+}
+
+@keyframes loop-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3.5px); }
+}
+
+@keyframes loop-card {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  25% { transform: rotate(-3deg) translateY(-1px); }
+  75% { transform: rotate(3deg) translateY(1px); }
+}
+
+@keyframes loop-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  5% { transform: rotate(-8deg); }
+  10% { transform: rotate(8deg); }
+  15% { transform: rotate(-6deg); }
+  20% { transform: rotate(6deg); }
+  25% { transform: rotate(0deg); }
+}
+
+@keyframes loop-breathe {
+  0%, 100% { opacity: 0.8; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+@keyframes loop-shield {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.05) translateY(-1px); }
+}
+
+.animate-loop-spin-slow {
+  animation: loop-spin-slow 16s infinite linear;
+}
+
+.animate-loop-pulse-gentle {
+  animation: loop-pulse-gentle 2.2s infinite ease-in-out;
+}
+
+.animate-loop-clock {
+  animation: loop-clock 4.5s infinite ease-in-out;
+}
+
+.animate-loop-float {
+  animation: loop-float 3.5s infinite ease-in-out;
+}
+
+.animate-loop-card {
+  animation: loop-card 5.5s infinite ease-in-out;
+}
+
+.animate-loop-wiggle {
+  animation: loop-wiggle 4.5s infinite ease-in-out;
+}
+
+.animate-loop-breathe {
+  animation: loop-breathe 4s infinite ease-in-out;
+}
+
+.animate-loop-shield {
+  animation: loop-shield 3.5s infinite ease-in-out;
+}
+
+

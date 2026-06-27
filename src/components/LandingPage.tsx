@@ -111,7 +111,7 @@ export default function LandingPage({
       <nav className="flex items-center justify-between px-6 sm:px-8 py-6 z-10 border-b border-white/5 bg-neutral-950/45 backdrop-blur-md sticky top-0">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
-            <span className="text-black font-black text-xs">SMM</span>
+            <span className="text-black font-black text-xs">FL</span>
           </div>
           <span className="text-xl font-display font-bold tracking-tighter uppercase">FollowLike Everywhere</span>
         </div>
@@ -188,7 +188,7 @@ export default function LandingPage({
                 <div className="w-6 h-6 flex-shrink-0 bg-white/10 border border-white/10 rounded flex items-center justify-center text-[10px] font-mono">02</div>
                 <div>
                   <p className="text-xs sm:text-sm font-bold text-white tracking-tight">Safe & Secure</p>
-                  <p className="text-[11px] text-neutral-400 leading-snug">Simulated organic traffic ensures safety.</p>
+                  <p className="text-[11px] text-neutral-400 leading-snug">High-quality organic traffic ensures safety.</p>
                 </div>
               </div>
               <div className="flex gap-4">
@@ -271,7 +271,7 @@ export default function LandingPage({
               <span className="text-xs font-mono text-neutral-500 tracking-widest uppercase">Verified Benchmark</span>
               <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-white/95">Why FollowLike Everywhere?</h2>
               <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
-                We use simulated viewer contexts across secure proxy grids, ensuring absolute safety for your channels.
+                We use premium optimized viewer contexts across secure proxy grids, ensuring absolute safety for your channels.
               </p>
 
               <div className="space-y-2 pt-2 text-xs">

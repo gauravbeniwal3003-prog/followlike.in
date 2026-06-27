@@ -125,9 +125,9 @@ class TransactionRejectRequest(BaseModel):
 # --- Helper Methods ---
 async def load_smm_config():
     global SMM_API_KEY, SMM_API_URL
-    key_val = os.environ.get("SMM_API_KEY", "4f875a1ab9fc4c8ca31cb98a6e82e98c")
+    key_val = os.environ.get("SMM_API_KEY", "")
     if not key_val or key_val == "":
-        key_val = "4f875a1ab9fc4c8ca31cb98a6e82e98c"
+        key_val = ""
     url_val = "https://socialuphub-backend.onrender.com/api/v2"
     
     if supabase:
@@ -153,6 +153,8 @@ async def load_smm_config():
 
 async def call_smm_api(action: str, **kwargs):
     await load_smm_config()
+    if not SMM_API_KEY or SMM_API_KEY == "" or SMM_API_KEY == "null":
+        raise Exception("SMM API Key is not configured. Please define SMM_API_KEY as an environment variable or set it in your Supabase global_settings table.")
     payload = {"key": SMM_API_KEY, "action": action, **kwargs}
     async with httpx.AsyncClient() as client:
         response = await client.post(SMM_API_URL, data=payload, timeout=20.0)

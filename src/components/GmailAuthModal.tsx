@@ -162,7 +162,7 @@ export default function GmailAuthModal({ isOpen, onClose, onSuccess }: GmailAuth
             <h3 className="text-xl font-bold tracking-tight text-white font-sans uppercase">
               FollowLike Everywhere
             </h3>
-            <p className="mt-1 text-xs text-neutral-400">Secure SMM Client Authorization Panel</p>
+            <p className="mt-1 text-xs text-neutral-400">Sign in to your account</p>
           </div>
 
           {/* Tab Selection */}

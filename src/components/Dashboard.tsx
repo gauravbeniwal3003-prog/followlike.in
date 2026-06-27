@@ -27,7 +27,9 @@ import {
   CreditCard,
   Menu,
   X,
-  MessageSquare
+  MessageSquare,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { SMMService, SMMOrder, Transaction, UserSession } from '../types';
 import { 
@@ -94,6 +96,10 @@ export default function Dashboard({
   const location = useLocation();
 
   const setActiveTab = (tab: 'home' | 'new-order' | 'orders' | 'services' | 'funds' | 'profile' | 'support' | 'menu' | 'admin') => {
+    if (isPlacingOrder) {
+      console.warn('Navigation blocked during active SMM order placement.');
+      return;
+    }
     setIsMobileMenuOpen(false);
     if (tab === 'menu' || tab === 'admin') {
       _setActiveTab(tab);
@@ -104,6 +110,7 @@ export default function Dashboard({
 
   // Sync activeTab with pathname on mount and pathname change
   useEffect(() => {
+    if (isPlacingOrder) return;
     const path = location.pathname;
     if (path === '/home') {
       _setActiveTab('home');
@@ -168,6 +175,25 @@ export default function Dashboard({
   const [orderQuantity, setOrderQuantity] = useState<number>(1000);
   const [calcCharge, setCalcCharge] = useState<number>(0);
   const [orderNotification, setOrderNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Order placement state
+  const [isPlacingOrder, setIsPlacingOrder] = useState<boolean>(false);
+  const [placedOrderDetails, setPlacedOrderDetails] = useState<{
+    orderId: string;
+    providerOrderId: string;
+    serviceName: string;
+    quantity: number;
+    charge: number;
+    timestamp: string;
+  } | null>(null);
+  const [orderErrorDetails, setOrderErrorDetails] = useState<string | null>(null);
+
+  // Custom dropdown states for Category & Service selector in New Order Form
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState<boolean>(false);
+  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
+  
+  const [isServiceDropdownOpen, setIsServiceDropdownOpen] = useState<boolean>(false);
+  const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
 
   // 2. Services search & filter
   const [servicesSearch, setServicesSearch] = useState<string>('');
@@ -442,6 +468,131 @@ export default function Dashboard({
     loadSupabaseData();
   }, [session.email]);
 
+  // Real-time connections to keep balance, orders, and transactions always up-to-date
+  useEffect(() => {
+    if (!session.email) return;
+
+    console.log('[Realtime] Subscribing to database channels for', session.email);
+
+    const channel = supabase
+      .channel(`user-realtime-channel-${session.email}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles',
+          filter: `email=eq.${session.email}`
+        },
+        (payload: any) => {
+          console.log('[Realtime] Profile change detected:', payload);
+          if (payload.new && typeof payload.new.balance !== 'undefined') {
+            const newBal = parseFloat(payload.new.balance);
+            setCurrentBalance(newBal);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: `user_email=eq.${session.email}`
+        },
+        (payload: any) => {
+          console.log('[Realtime] Order change detected:', payload);
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new;
+            const newOrder: SMMOrder = {
+              id: row.id,
+              serviceId: row.service_id || '',
+              serviceName: row.service_name || `Service #${row.service_id || ''}`,
+              category: row.category || 'General',
+              targetUrl: row.target_url || row.link || '',
+              quantity: row.quantity,
+              charge: parseFloat(row.charge),
+              status: row.status as any,
+              createdAt: row.created_at,
+              providerOrderId: row.provider_order_id
+            };
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === newOrder.id)) return prev;
+              return [newOrder, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new;
+            const updatedOrder: Partial<SMMOrder> = {
+              serviceId: row.service_id,
+              serviceName: row.service_name,
+              category: row.category,
+              targetUrl: row.target_url || row.link,
+              quantity: row.quantity,
+              charge: row.charge ? parseFloat(row.charge) : undefined,
+              status: row.status as any,
+              providerOrderId: row.provider_order_id
+            };
+            setOrders((prev) =>
+              prev.map((o) =>
+                o.id === row.id ? ({ ...o, ...updatedOrder } as SMMOrder) : o
+              )
+            );
+          } else if (payload.eventType === 'DELETE') {
+            const row = payload.old;
+            setOrders((prev) => prev.filter((o) => o.id !== row.id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: `user_email=eq.${session.email}`
+        },
+        (payload: any) => {
+          console.log('[Realtime] Transaction change detected:', payload);
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new;
+            const newTx: Transaction = {
+              id: row.id,
+              amount: parseFloat(row.amount),
+              method: row.method,
+              status: row.status as any,
+              createdAt: row.created_at
+            };
+            setTransactions((prev) => {
+              if (prev.some((t) => t.id === newTx.id)) return prev;
+              return [newTx, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new;
+            const updatedTx: Partial<Transaction> = {
+              amount: row.amount ? parseFloat(row.amount) : undefined,
+              method: row.method,
+              status: row.status as any,
+              createdAt: row.created_at
+            };
+            setTransactions((prev) =>
+              prev.map((t) =>
+                t.id === row.id ? ({ ...t, ...updatedTx } as Transaction) : t
+              )
+            );
+          } else if (payload.eventType === 'DELETE') {
+            const row = payload.old;
+            setTransactions((prev) => prev.filter((t) => t.id !== row.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[Realtime] Cleaning up real-time subscription for', session.email);
+      supabase.removeChannel(channel);
+    };
+  }, [session.email]);
+
   // Persist states to database
   const saveOrdersToStorage = async (newOrders: SMMOrder[]) => {
     setOrders(newOrders);
@@ -657,6 +808,8 @@ export default function Dashboard({
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setOrderNotification(null);
+    setPlacedOrderDetails(null);
+    setOrderErrorDetails(null);
 
     const service = servicesCatalog.find(s => s.id === selectedServiceId);
     if (!service) {
@@ -677,14 +830,32 @@ export default function Dashboard({
     if (currentBalance < calcCharge) {
       setOrderNotification({
         type: 'error',
-        text: `Insufficient wallet tokens. Required: ₹${calcCharge.toFixed(2)}, Available: ₹${currentBalance.toFixed(2)}. Please proceed to 'Add Funds' to simulate a ledger deposit.`
+        text: `Insufficient wallet balance. Required: ₹${calcCharge.toFixed(2)}, Available: ₹${currentBalance.toFixed(2)}. Please proceed to 'Add Funds' to credit your account.`
       });
       return;
     }
 
+    // Prevent double same service on same link (active orders check)
+    const hasDuplicateActiveOrder = orders.some(o => {
+      const isSameService = String(o.serviceId) === String(selectedServiceId);
+      const isSameLink = o.targetUrl && String(o.targetUrl).trim().toLowerCase() === String(targetUrl).trim().toLowerCase();
+      const isActiveStatus = o.status === 'Pending' || o.status === 'In Progress';
+      return isSameService && isSameLink && isActiveStatus;
+    });
+
+    if (hasDuplicateActiveOrder) {
+      setOrderNotification({
+        type: 'error',
+        text: 'Duplicate Order Warning: An active order for this exact service and link is already being processed. Please wait for the current order to complete before placing another.'
+      });
+      return;
+    }
+
+    // Set placing state
+    setIsPlacingOrder(true);
+
     // Call SMM provider API via Express backend to automate order creation
     let providerOrderId: string | undefined = undefined;
-    setOrderNotification({ type: 'success', text: 'Routing order automatically to provider API...' });
 
     try {
       const res = await fetch(`${API_BASE}/api/smm/order`, {
@@ -707,10 +878,13 @@ export default function Dashboard({
       }
     } catch (apiErr: any) {
       console.warn("Automation pipeline failure:", apiErr);
+      const errMsg = `Order Automation Failure: ${apiErr.message || 'Connecting to provider API failed. Please retry.'}`;
       setOrderNotification({
         type: 'error',
-        text: `Order Automation Failure: ${apiErr.message || 'Connecting to provider API failed. Please retry.'}`
+        text: errMsg
       });
+      setOrderErrorDetails(errMsg);
+      setIsPlacingOrder(false);
       return;
     }
 
@@ -731,44 +905,64 @@ export default function Dashboard({
       providerOrderId: providerOrderId || orderId
     };
 
-    // Save to Supabase (and local storage fallback)
-    const dbSuccess = await createDbOrder(session.email, newOrder);
-    if (dbSuccess) {
-      // Deduct balance and update state
-      await saveBalanceToStorage(newBal);
+    try {
+      // Save to Supabase (and local storage fallback)
+      const dbSuccess = await createDbOrder(session.email, newOrder);
+      if (dbSuccess) {
+        // Deduct balance and update state
+        await saveBalanceToStorage(newBal);
 
-      const updatedOrders = [newOrder, ...orders];
-      await saveOrdersToStorage(updatedOrders);
-      setOrders(updatedOrders);
+        const updatedOrders = [newOrder, ...orders];
+        await saveOrdersToStorage(updatedOrders);
+        setOrders(updatedOrders);
 
-      // Log order transaction ledger
-      const orderTxId = 'TXN-' + Math.floor(100000 + Math.random() * 900000);
-      const orderTx: Transaction = {
-        id: orderTxId,
-        amount: -calcCharge,
-        method: 'SMM Order Debit',
-        status: 'Success',
-        createdAt: new Date().toISOString()
-      };
-      try {
-        await logDbTransaction(session.email, orderTx);
-        setTransactions(prev => [orderTx, ...prev]);
-      } catch (logErr) {
-        console.error("Tx log fail:", logErr);
+        // Log order transaction ledger
+        const orderTxId = 'TXN-' + Math.floor(100000 + Math.random() * 900000);
+        const orderTx: Transaction = {
+          id: orderTxId,
+          amount: -calcCharge,
+          method: 'SMM Order Debit',
+          status: 'Success',
+          createdAt: new Date().toISOString()
+        };
+        try {
+          await logDbTransaction(session.email, orderTx);
+          setTransactions(prev => [orderTx, ...prev]);
+        } catch (logErr) {
+          console.error("Tx log fail:", logErr);
+        }
+
+        // Clean form
+        setTargetUrl('');
+        setOrderQuantity(service.min);
+
+        // Store details of the successfully placed order to display
+        setPlacedOrderDetails({
+          orderId: orderId,
+          providerOrderId: providerOrderId || orderId,
+          serviceName: service.name,
+          quantity: orderQuantity,
+          charge: calcCharge,
+          timestamp: newOrder.createdAt
+        });
+
+        setOrderNotification({
+          type: 'success',
+          text: `Order Confirmed! Ref: ${orderId} (SMM: ${providerOrderId}). ₹${calcCharge.toFixed(2)} deducted.`
+        });
+      } else {
+        const dbErrMsg = 'Failed to write your order sequence directly to the database. Please check Supabase table schemas.';
+        setOrderNotification({
+          type: 'error',
+          text: dbErrMsg
+        });
+        setOrderErrorDetails(dbErrMsg);
       }
-
-      // Clean form
-      setTargetUrl('');
-      setOrderQuantity(service.min);
-      setOrderNotification({
-        type: 'success',
-        text: `Order Confirmed! Ref: ${orderId} (SMM: ${providerOrderId}). ₹${calcCharge.toFixed(2)} deducted from your wallet.`
-      });
-    } else {
-      setOrderNotification({
-        type: 'error',
-        text: 'Failed to write your order sequence directly to the database. Please check Supabase table schemas.'
-      });
+    } catch (err: any) {
+      console.error("Critical error in db order save:", err);
+      setOrderErrorDetails(err.message || 'Unknown database write error.');
+    } finally {
+      setIsPlacingOrder(false);
     }
   };
 
@@ -879,6 +1073,94 @@ export default function Dashboard({
 
   return (
     <div id="dashboard-root" className="min-h-screen bg-black text-white font-sans flex flex-col overflow-x-hidden w-full max-w-full">
+      {/* Immersive liquid glassy blur loading overlay */}
+      {isPlacingOrder && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/85 backdrop-blur-3xl transition-all duration-300">
+          <div className="absolute inset-0 bg-radial-gradient from-neutral-900/50 via-black/90 to-black/100 pointer-events-none"></div>
+          
+          {/* Animated Liquid glass glowing ambient orbs */}
+          <div className="absolute top-1/4 left-1/4 w-[300px] h-[300px] rounded-full bg-white/5 blur-[120px] animate-pulse"></div>
+          <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full bg-neutral-800/20 blur-[150px] animate-pulse" style={{ animationDelay: '1.5s' }}></div>
+
+          <div className="relative text-center space-y-6 max-w-sm px-6">
+            
+            {/* Liquid rotating loader with ring of glass */}
+            <div className="relative flex items-center justify-center mx-auto">
+              <div className="absolute rounded-full border border-white/5 bg-white/[0.02] w-24 h-24 shadow-[inset_0_0_20px_rgba(255,255,255,0.05)]"></div>
+              {/* Spinner */}
+              <div className="animate-spin rounded-full h-16 w-16 border-2 border-white/5 border-t-white shadow-2xl"></div>
+              {/* Inner glowing pulse */}
+              <div className="absolute rounded-full h-8 w-8 bg-white/10 animate-ping"></div>
+            </div>
+
+            {/* Dynamic visual copy */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-black font-mono uppercase tracking-[0.2em] text-white animate-pulse">
+                Authorizing SMM Order...
+              </h3>
+              <p className="text-[11px] text-neutral-400 leading-relaxed font-sans max-w-xs mx-auto">
+                Contacting the SMM pipeline to register your action. Your request is processed instantly via direct upstream protocols. Do not close or refresh this page.
+              </p>
+            </div>
+
+            {/* Professional sub-indicator bar */}
+            <div className="w-32 h-1 bg-white/10 rounded-full mx-auto overflow-hidden">
+              <div className="w-1/2 h-full bg-neutral-400 rounded-full animate-pulse"></div>
+            </div>
+
+          </div>
+        </div>
+      )}
+      
+      {/* Immersive liquid glassy blur general loading overlay */}
+      {loadingDb && (
+        <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black backdrop-blur-3xl transition-all duration-300">
+          <div className="absolute inset-0 bg-radial-gradient from-neutral-900/50 via-black/90 to-black/100 pointer-events-none"></div>
+          
+          {/* Animated Liquid glass glowing ambient orbs */}
+          <div className="absolute top-1/3 left-1/3 w-[300px] h-[300px] rounded-full bg-white/5 blur-[120px] animate-pulse"></div>
+          <div className="absolute bottom-1/3 right-1/3 w-[350px] h-[350px] rounded-full bg-neutral-800/10 blur-[150px] animate-pulse" style={{ animationDelay: '1s' }}></div>
+
+          <div className="relative text-center space-y-6 max-w-sm px-6">
+            
+            {/* Logo Group */}
+            <div className="flex items-center justify-center space-x-2 select-none mb-4">
+              <div className="w-10 h-10 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center font-bold text-white shadow-inner shrink-0">
+                <span className="text-base font-semibold leading-none animate-pulse">▲</span>
+              </div>
+              <div className="flex flex-col text-left leading-none">
+                <span className="text-sm font-black text-white uppercase tracking-wider font-mono">FOLLOWLIKE</span>
+                <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-widest font-mono">EVERYWHERE</span>
+              </div>
+            </div>
+
+            {/* Liquid rotating loader with ring of glass */}
+            <div className="relative flex items-center justify-center mx-auto">
+              <div className="absolute rounded-full border border-white/5 bg-white/[0.02] w-20 h-20 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] animate-pulse"></div>
+              {/* Spinner */}
+              <div className="animate-spin rounded-full h-12 w-12 border-2 border-white/5 border-t-white shadow-xl" style={{ animationDuration: '0.8s' }}></div>
+              {/* Inner glowing pulse */}
+              <div className="absolute rounded-full h-6 w-6 bg-white/15 animate-ping"></div>
+            </div>
+
+            {/* Dynamic visual copy */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-black font-mono uppercase tracking-[0.2em] text-neutral-300 animate-pulse">
+                Synchronizing SMM Portal...
+              </h3>
+              <p className="text-[11px] text-neutral-500 leading-relaxed font-sans max-w-xs mx-auto">
+                Establishing encrypted Supabase session & loading your transaction history ledger with real-time replication.
+              </p>
+            </div>
+
+            {/* Professional sub-indicator bar */}
+            <div className="w-24 h-0.5 bg-white/10 rounded-full mx-auto overflow-hidden">
+              <div className="w-3/4 h-full bg-neutral-400 rounded-full animate-pulse"></div>
+            </div>
+
+          </div>
+        </div>
+      )}
       {/* Background ambient liquid nodes */}
       <div className="fixed top-[-250px] right-[-100px] w-[500px] h-[500px] rounded-full bg-neutral-900/40 blur-[130px] pointer-events-none"></div>
       <div className="fixed bottom-[-150px] left-[-200px] w-[600px] h-[600px] rounded-full bg-neutral-800/10 blur-[150px] pointer-events-none"></div>
@@ -919,6 +1201,12 @@ export default function Dashboard({
             {/* LOGGED IN USER PROFILE / HEADER CONTROLS */}
             <div className="flex items-center space-x-2 sm:space-x-4">
               
+              {/* Live Realtime Connection Indicator Badge */}
+              <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full border border-emerald-500/10 bg-emerald-500/[0.03] text-[9px] uppercase font-mono tracking-wider text-emerald-400 select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block shadow-[0_0_8px_rgba(52,211,153,0.5)]"></span>
+                <span>Live Syncing</span>
+              </div>
+
               {/* Simulated Ambient Indicators (Screenshot Moon & Message bubbles) */}
               <button
                 onClick={() => setActiveTab('menu')}
@@ -968,7 +1256,7 @@ export default function Dashboard({
                 activeTab === 'home' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
               }`}
             >
-              <Globe className="w-4 h-4 mr-3" />
+              <Globe className="w-4 h-4 mr-3 animate-loop-spin-slow" />
               Dashboard
             </button>
 
@@ -979,7 +1267,7 @@ export default function Dashboard({
                 activeTab === 'new-order' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
               }`}
             >
-              <PlusCircle className="w-4 h-4 mr-3" />
+              <PlusCircle className="w-4 h-4 mr-3 animate-loop-pulse-gentle" />
               New Order
             </button>
 
@@ -990,7 +1278,7 @@ export default function Dashboard({
                 activeTab === 'orders' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
               }`}
             >
-              <Clock className="w-4 h-4 mr-3" />
+              <Clock className="w-4 h-4 mr-3 animate-loop-clock" />
               Orders
               {orders.filter(o => o.status === 'In Progress' || o.status === 'Pending').length > 0 && (
                 <span className="ml-auto px-1.5 py-0.5 rounded-full bg-white text-black font-mono text-[9px] font-bold">
@@ -1006,7 +1294,7 @@ export default function Dashboard({
                 activeTab === 'services' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
               }`}
             >
-              <Layers className="w-4 h-4 mr-3" />
+              <Layers className="w-4 h-4 mr-3 animate-loop-float" />
               Services
             </button>
 
@@ -1017,7 +1305,7 @@ export default function Dashboard({
                 activeTab === 'funds' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
               }`}
             >
-              <CreditCard className="w-4 h-4 mr-3" />
+              <CreditCard className="w-4 h-4 mr-3 animate-loop-card" />
               Add Funds
             </button>
 
@@ -1028,7 +1316,7 @@ export default function Dashboard({
                 activeTab === 'support' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
               }`}
             >
-              <MessageSquare className="w-4 h-4 mr-3" />
+              <MessageSquare className="w-4 h-4 mr-3 animate-loop-wiggle" />
               Support
             </button>
 
@@ -1039,7 +1327,7 @@ export default function Dashboard({
                 activeTab === 'profile' ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white hover:bg-white/[0.03]'
               }`}
             >
-              <User className="w-4 h-4 mr-3" />
+              <User className="w-4 h-4 mr-3 animate-loop-breathe" />
               Settings
             </button>
 
@@ -1049,7 +1337,7 @@ export default function Dashboard({
                 id="sidebar-tab-admin"
                 className={`w-full flex items-center px-4 py-3 text-xs font-semibold rounded-lg transition-all border border-white/5 bg-white/[0.01] hover:bg-white/[0.04] text-neutral-300`}
               >
-                <Shield className="w-4 h-4 mr-3" />
+                <Shield className="w-4 h-4 mr-3 animate-loop-shield" />
                 Admin
               </a>
             )}
@@ -1089,13 +1377,13 @@ export default function Dashboard({
 
                 <div className="space-y-1.5">
                     {[
-                      { key: 'home', label: 'Home Dashboard', icon: Globe },
-                      { key: 'new-order', label: 'New Order Form', icon: PlusCircle },
-                      { key: 'orders', label: 'Order Placements', icon: Clock },
-                      { key: 'services', label: 'Services Catalogue', icon: Layers },
-                      { key: 'funds', label: 'Add Funds', icon: CreditCard },
-                      { key: 'support', label: 'WhatsApp Support', icon: MessageSquare },
-                      { key: 'profile', label: 'Account Profile', icon: User }
+                      { key: 'home', label: 'Home Dashboard', icon: Globe, animateClass: 'animate-loop-spin-slow' },
+                      { key: 'new-order', label: 'New Order Form', icon: PlusCircle, animateClass: 'animate-loop-pulse-gentle' },
+                      { key: 'orders', label: 'Order Placements', icon: Clock, animateClass: 'animate-loop-clock' },
+                      { key: 'services', label: 'Services Catalogue', icon: Layers, animateClass: 'animate-loop-float' },
+                      { key: 'funds', label: 'Add Funds', icon: CreditCard, animateClass: 'animate-loop-card' },
+                      { key: 'support', label: 'WhatsApp Support', icon: MessageSquare, animateClass: 'animate-loop-wiggle' },
+                      { key: 'profile', label: 'Account Profile', icon: User, animateClass: 'animate-loop-breathe' }
                     ].map((tab) => {
                     const TabIcon = tab.icon;
                     return (
@@ -1110,7 +1398,7 @@ export default function Dashboard({
                           activeTab === tab.key ? 'bg-white text-black font-semibold' : 'text-neutral-400 hover:text-white'
                         }`}
                       >
-                        <TabIcon className="w-4 h-4 mr-3" />
+                        <TabIcon className={`w-4 h-4 mr-3 ${tab.animateClass || ''}`} />
                         {tab.label}
                       </button>
                     );
@@ -1162,13 +1450,13 @@ export default function Dashboard({
                   <div>
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] text-neutral-300 font-mono uppercase tracking-wider mb-3">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      Secure SMM Node Active
+                      FollowLike Active
                     </div>
                     <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tighter leading-none font-display">
                       Welcome, <span className="text-neutral-300 font-normal">{session.name}</span>!
                     </h2>
                     <p className="text-xs text-neutral-400 mt-2 max-w-md leading-relaxed">
-                      Your master gateway for instant, high-retention social audience generation and multichannel organic growth campaigns.
+                      Grow your social channels with easy, high-quality promotional campaigns.
                     </p>
                   </div>
                   
@@ -1255,7 +1543,7 @@ export default function Dashboard({
                       ₹{currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
                     <div className="mt-2 text-[10px] text-neutral-500 font-mono flex items-center justify-between">
-                      <span>Direct SMM Rates</span>
+                      <span>Best Pricing</span>
                       <span className="text-emerald-400 hover:underline group-hover:translate-x-0.5 transition-transform">+ Recharge</span>
                     </div>
                   </div>
@@ -1420,19 +1708,19 @@ export default function Dashboard({
                 <div className="p-5 rounded-2xl border border-white/5 bg-neutral-900/40 space-y-2">
                   <h4 className="text-xs font-extrabold text-white uppercase font-mono tracking-wider flex items-center gap-1.5">
                     <Shield className="w-4 h-4 text-neutral-400" />
-                    🔒 Safe & Secured Panel Protocols
+                    🔒 Safe & Secure
                   </h4>
                   <p className="text-xs text-neutral-400 leading-relaxed font-sans">
-                    Your social channel growth vectors are securely handled under standard API delivery channels. No personal credentials or private account parameters are ever required or logged.
+                    We don't need your account password or logins. Your profiles are completely safe with us.
                   </p>
                 </div>
                 <div className="p-5 rounded-2xl border border-white/5 bg-neutral-900/40 space-y-2">
                   <h4 className="text-xs font-extrabold text-white uppercase font-mono tracking-wider flex items-center gap-1.5">
                     <Zap className="w-4 h-4 text-neutral-400" />
-                    ⚡ Direct Upstream Execution Speed
+                    ⚡ Fast Delivery
                   </h4>
                   <p className="text-xs text-neutral-400 leading-relaxed font-sans">
-                    We maintain an automated direct endpoint proxy link with the upstream servers for ultrafast start times. Keep channel target profiles public to avoid tracking drops.
+                    Most campaigns start instantly. Just make sure your profile is public so we can process your request.
                   </p>
                 </div>
               </div>
@@ -1443,207 +1731,536 @@ export default function Dashboard({
           {/* TAB 1: NEW ORDER FORM */}
           {activeTab === 'new-order' && (
             <div id="view-new-order" className="space-y-6">
-              
-              {/* Promo Banner / Welcome indicator */}
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-r from-neutral-900 via-neutral-950 to-neutral-900 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h2 className="text-sm font-semibold text-white flex items-center gap-1.5 font-mono uppercase tracking-wider">
-                    ⚡ New Order
-                  </h2>
-                  <p className="text-xs text-neutral-400 mt-1 leading-normal">
-                    Select a service and place your order.
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-semibold bg-white/[0.04] p-2 border border-white/5 rounded-lg whitespace-nowrap">
-                  Online
-                </div>
-              </div>
+              {placedOrderDetails ? (
+                /* Successful Order Display Screen */
+                <div id="order-success-screen" className="rounded-2xl border border-emerald-500/20 bg-gradient-to-b from-neutral-900/80 to-neutral-950/80 p-6 sm:p-8 space-y-6 backdrop-blur-xl relative overflow-hidden shadow-2xl max-w-xl mx-auto my-8">
+                  {/* Background ambient light */}
+                  <div className="absolute top-[-50px] right-[-50px] w-48 h-48 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none"></div>
+                  <div className="absolute bottom-[-50px] left-[-50px] w-48 h-48 rounded-full bg-white/5 blur-2xl pointer-events-none"></div>
 
-              {/* Category Quick Platform Pills (Screenshot-like visual helper) */}
-              <div className="space-y-2">
-                <span className="block text-[10px] font-bold text-neutral-500 uppercase font-mono tracking-wider">
-                  Quick Category Filters
-                </span>
-                <div className="flex flex-nowrap overflow-x-auto gap-2 pb-1 scrollbar-none">
-                  {['Instagram', 'YouTube', 'Twitter', 'TikTok', 'Facebook'].map((plat) => {
-                    const isActive = selectedPlatform.toLowerCase() === plat.toLowerCase();
-                    return (
-                      <button
-                        key={plat}
-                        type="button"
-                        onClick={() => {
-                          if (selectedPlatform.toLowerCase() === plat.toLowerCase()) {
-                            // If clicking again, reset/deselect to show all categories
-                            setSelectedPlatform('');
-                          } else {
-                            setSelectedPlatform(plat);
-                          }
-                        }}
-                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap border shrink-0 ${
-                          isActive
-                            ? 'bg-white text-black border-white font-black'
-                            : 'bg-neutral-950 text-neutral-400 border-white/10 hover:text-white hover:bg-neutral-900'
+                  {/* Animated Green Pulsing Check Shield */}
+                  <div className="flex flex-col items-center text-center space-y-3">
+                    <div className="relative flex items-center justify-center">
+                      <span className="absolute inline-flex h-16 w-16 rounded-full bg-emerald-500/20 animate-ping opacity-75"></span>
+                      <div className="relative rounded-full bg-emerald-500/10 border border-emerald-500/30 p-4 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+                        <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <h2 className="text-xl font-extrabold tracking-tight text-white sm:text-2xl">
+                        Order Placed Successfully!
+                      </h2>
+                      <p className="text-xs text-emerald-400/80 font-mono font-medium tracking-widest">
+                        PROVIDER PIPELINE CONFIRMED
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Detailed Information Grid */}
+                  <div className="space-y-3 pt-2">
+                    <div className="rounded-xl border border-white/5 bg-neutral-950/60 p-4 space-y-3 text-xs">
+                      
+                      {/* Service Name */}
+                      <div className="flex flex-col gap-1 pb-2 border-b border-white/5">
+                        <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-neutral-500">Service</span>
+                        <span className="text-xs font-extrabold text-white leading-relaxed">
+                          {placedOrderDetails.serviceName}
+                        </span>
+                      </div>
+
+                      {/* Order ID & Provider Ref */}
+                      <div className="grid grid-cols-2 gap-4 py-1">
+                        <div>
+                          <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-neutral-500 block mb-1">Local Order ID</span>
+                          <span className="font-mono text-[11px] font-black text-neutral-200 select-all">
+                            {placedOrderDetails.orderId}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-neutral-500 block mb-1">Provider Ref ID</span>
+                          <span className="font-mono text-[11px] font-black text-white select-all">
+                            {placedOrderDetails.providerOrderId}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Quantity & Charge */}
+                      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                        <div>
+                          <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-neutral-500 block mb-1">Quantity</span>
+                          <span className="font-mono font-extrabold text-neutral-300">
+                            {placedOrderDetails.quantity.toLocaleString()}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-neutral-500 block mb-1">Total Charge</span>
+                          <span className="font-mono font-black text-emerald-400 text-sm">
+                            ₹{placedOrderDetails.charge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Timestamp */}
+                      <div className="pt-2 border-t border-white/5 flex justify-between items-center text-[10px] text-neutral-400">
+                        <span className="font-mono uppercase font-bold tracking-wider text-neutral-500">Placed Timestamp</span>
+                        <span className="font-mono text-[11px] text-neutral-300">
+                          {new Date(placedOrderDetails.timestamp).toLocaleString('en-IN', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                          })}
+                        </span>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Return Action Button */}
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlacedOrderDetails(null);
+                        setOrderNotification(null);
+                      }}
+                      className="w-full py-3.5 rounded-xl text-xs font-black bg-white text-black hover:bg-neutral-200 cursor-pointer shadow-[0_0_15px_rgba(255,255,255,0.15)] transition-all uppercase tracking-wider text-center flex items-center justify-center gap-2"
+                    >
+                      Place More Orders
+                    </button>
+                  </div>
+                </div>
+              ) : orderErrorDetails ? (
+                /* Failed Order Display Screen */
+                <div id="order-failure-screen" className="rounded-2xl border border-red-500/20 bg-gradient-to-b from-neutral-900/80 to-neutral-950/80 p-6 sm:p-8 space-y-6 backdrop-blur-xl relative overflow-hidden shadow-2xl max-w-xl mx-auto my-8">
+                  {/* Background ambient light */}
+                  <div className="absolute top-[-50px] right-[-50px] w-48 h-48 rounded-full bg-red-500/10 blur-3xl pointer-events-none"></div>
+
+                  {/* Red warning icon */}
+                  <div className="flex flex-col items-center text-center space-y-3">
+                    <div className="relative rounded-full bg-red-500/10 border border-red-500/30 p-4 shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+                      <AlertTriangle className="w-8 h-8 text-red-400 animate-pulse" />
+                    </div>
+                    <div className="space-y-1">
+                      <h2 className="text-xl font-extrabold tracking-tight text-white sm:text-2xl">
+                        Order Placement Failed
+                      </h2>
+                      <p className="text-xs text-red-400/80 font-mono font-medium tracking-widest">
+                        PIPELINE ACTION ABORTED
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Detailed Error Details */}
+                  <div className="rounded-xl border border-white/5 bg-neutral-950/60 p-4 text-xs space-y-2">
+                    <div className="text-[10px] uppercase font-mono font-bold tracking-wider text-neutral-500">
+                      Failure Reason
+                    </div>
+                    <div className="text-neutral-300 font-sans leading-relaxed text-[11px]">
+                      {orderErrorDetails || "An unexpected error occurred while routing the order to the processing server. Your balance has NOT been deducted."}
+                    </div>
+                  </div>
+
+                  {/* Dismiss Action Button */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOrderErrorDetails(null);
+                      }}
+                      className="w-full py-3.5 rounded-xl text-xs font-black bg-red-600 text-white hover:bg-red-500 cursor-pointer shadow-[0_0_15px_rgba(239,68,68,0.15)] transition-all uppercase tracking-wider text-center"
+                    >
+                      Dismiss & Adjust Parameters
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* SMM Order Form */
+                <>
+                  {/* Promo Banner / Welcome indicator */}
+                  <div className="rounded-2xl border border-white/10 bg-gradient-to-r from-neutral-900 via-neutral-950 to-neutral-900 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h2 className="text-sm font-semibold text-white flex items-center gap-1.5 font-mono uppercase tracking-wider">
+                        ⚡ New Order
+                      </h2>
+                      <p className="text-xs text-neutral-400 mt-1 leading-normal">
+                        Select a service and place your order.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-semibold bg-white/[0.04] p-2 border border-white/5 rounded-lg whitespace-nowrap">
+                      Online
+                    </div>
+                  </div>
+
+                  {/* Category Quick Platform Pills (Screenshot-like visual helper) */}
+                  <div className="space-y-2">
+                    <span className="block text-[10px] font-bold text-neutral-500 uppercase font-mono tracking-wider">
+                      Quick Category Filters
+                    </span>
+                    <div className="flex flex-nowrap overflow-x-auto gap-2 pb-1 scrollbar-none">
+                      {['Instagram', 'YouTube', 'Twitter', 'TikTok', 'Facebook'].map((plat) => {
+                        const isActive = selectedPlatform.toLowerCase() === plat.toLowerCase();
+                        return (
+                          <button
+                            key={plat}
+                            type="button"
+                            onClick={() => {
+                              if (selectedPlatform.toLowerCase() === plat.toLowerCase()) {
+                                // If clicking again, reset/deselect to show all categories
+                                setSelectedPlatform('');
+                              } else {
+                                setSelectedPlatform(plat);
+                              }
+                            }}
+                            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap border shrink-0 ${
+                              isActive
+                                ? 'bg-white text-black border-white font-black'
+                                : 'bg-neutral-950 text-neutral-400 border-white/10 hover:text-white hover:bg-neutral-900'
+                            }`}
+                          >
+                            {plat}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Form card wrapped in Liquid Glass */}
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-6">
+                    
+                    {orderNotification && (
+                      <div
+                        id="order-notification-card"
+                        className={`p-4 rounded-xl flex items-start gap-2.5 text-xs ${
+                          orderNotification.type === 'success'
+                            ? 'bg-neutral-900 border border-white/20 text-white'
+                            : 'bg-red-950/40 border border-red-900/60 text-red-300'
                         }`}
                       >
-                        {plat}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Form card wrapped in Liquid Glass */}
-              <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-6">
-                
-                {orderNotification && (
-                  <div
-                    id="order-notification-card"
-                    className={`p-4 rounded-xl flex items-start gap-2.5 text-xs ${
-                      orderNotification.type === 'success'
-                        ? 'bg-neutral-900 border border-white/20 text-white'
-                        : 'bg-red-950/40 border border-red-900/60 text-red-300'
-                    }`}
-                  >
-                    {orderNotification.type === 'success' ? (
-                      <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-white" />
-                    ) : (
-                      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
+                        {orderNotification.type === 'success' ? (
+                          <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-white" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
+                        )}
+                        <div>{orderNotification.text}</div>
+                      </div>
                     )}
-                    <div>{orderNotification.text}</div>
-                  </div>
-                )}
 
-                <form id="smm-place-order-form" onSubmit={handlePlaceOrder} className="space-y-5">
-                  
-                  {/* Category select dropdown */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
-                      Category
-                    </label>
-                    <select
-                      id="order-category-select"
-                      value={selectedCategory}
-                      onChange={(e) => setSelectedCategory(e.target.value)}
-                      className="w-full px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all"
-                    >
-                      {filteredCategories.length === 0 && <option value="">Loading categories...</option>}
-                      {filteredCategories.map(cat => (
-                        <option key={cat} value={cat}>
-                          {cat} Services
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    <form id="smm-place-order-form" onSubmit={handlePlaceOrder} className="space-y-5">
+                      
+                      {/* Category select dropdown */}
+                      <div className="relative">
+                        <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
+                          Category
+                        </label>
+                        <button
+                          type="button"
+                          id="custom-category-dropdown-trigger"
+                          onClick={() => {
+                            setIsCategoryDropdownOpen(!isCategoryDropdownOpen);
+                            setIsServiceDropdownOpen(false); // close other dropdown
+                          }}
+                          className="w-full flex items-center justify-between px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 hover:border-white/20 focus:border-white focus:outline-none transition-all text-left font-sans cursor-pointer"
+                        >
+                          <span className="truncate">
+                            {selectedCategory ? `${selectedCategory} Services` : 'Select a Category'}
+                          </span>
+                          <ChevronDown className={`w-4 h-4 ml-2 shrink-0 text-neutral-500 transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180 text-white' : ''}`} />
+                        </button>
 
-                  {/* Service select dropdown */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
-                      Service
-                    </label>
-                    <select
-                      id="order-service-select"
-                      value={selectedServiceId}
-                      onChange={(e) => setSelectedServiceId(e.target.value)}
-                      className="w-full px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all leading-relaxed"
-                    >
-                      {filteredServicesForOrder.length === 0 && <option value="">No services available for this category</option>}
-                      {filteredServicesForOrder.map(service => (
-                        <option key={service.id} value={service.id}>
-                          {service.name} — ₹{getInrRate(service)}/1k
-                        </option>
-                      ))}
-                    </select>
-                    {/* Service Description display */}
-                    <div className="mt-2.5 p-3.5 rounded-xl bg-neutral-950/80 text-[11px] text-neutral-300 leading-relaxed font-sans border border-white/5 break-words">
-                      {renderDescription(servicesCatalog.find(s => s.id === selectedServiceId)?.description || '')}
-                    </div>
-                  </div>
+                        {/* Dropdown Menu */}
+                        {isCategoryDropdownOpen && (
+                          <>
+                            {/* Overlay to handle click outside */}
+                            <div 
+                              className="fixed inset-0 z-40 bg-transparent" 
+                              onClick={() => {
+                                setIsCategoryDropdownOpen(false);
+                                setCategorySearchQuery('');
+                              }} 
+                            />
+                            
+                            <div className="absolute left-0 right-0 z-50 mt-1.5 rounded-xl border border-white/10 bg-neutral-950/95 backdrop-blur-xl shadow-[0_10px_30px_rgba(0,0,0,0.9)] overflow-hidden transition-all duration-200">
+                              {/* Search Bar */}
+                              <div className="p-2 border-b border-white/5 flex items-center gap-2 bg-neutral-900/50">
+                                <Search className="w-3.5 h-3.5 text-neutral-500 ml-1 shrink-0" />
+                                <input
+                                  type="text"
+                                  placeholder="Search categories..."
+                                  value={categorySearchQuery}
+                                  onChange={(e) => setCategorySearchQuery(e.target.value)}
+                                  className="w-full bg-transparent border-none text-[11px] text-white focus:outline-none placeholder-neutral-600 font-sans"
+                                />
+                                {categorySearchQuery && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCategorySearchQuery('')}
+                                    className="text-[10px] text-neutral-500 hover:text-white px-1.5 py-0.5"
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                              </div>
 
-                  {/* Target URL input */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
-                      Link
-                    </label>
-                    <div className="relative">
-                      <input
-                        id="order-target-link"
-                        type="url"
-                        required
-                        placeholder="e.g. https://www.instagram.com/p/..."
-                        value={targetUrl}
-                        onChange={(e) => setTargetUrl(e.target.value)}
-                        className="w-full px-4 py-3 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all placeholder-neutral-600 font-sans"
-                      />
-                    </div>
-                    <p className="mt-1.5 text-[10px] text-neutral-500 font-sans">
-                      Your account or post must be set to public.
-                    </p>
-                  </div>
-
-                  {/* Quantity and Charge side-by-side columns (Screenshot 2 style!) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    
-                    {/* Quantity left input */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
-                        Quantity
-                      </label>
-                      <input
-                        id="order-quantity-input"
-                        type="number"
-                        required
-                        step="1"
-                        value={orderQuantity}
-                        onChange={(e) => setOrderQuantity(Math.max(1, parseInt(e.target.value) || 0))}
-                        className="w-full px-4 py-3 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all placeholder-neutral-600 font-mono font-bold"
-                      />
-                      <div className="mt-1.5 flex justify-between text-[9px] text-neutral-500 font-mono">
-                        <span>Min: {servicesCatalog.find(s => s.id === selectedServiceId)?.min.toLocaleString() || '100'}</span>
-                        <span>Max: {servicesCatalog.find(s => s.id === selectedServiceId)?.max.toLocaleString() || '50,000'}</span>
+                              {/* Category Items */}
+                              <div className="max-h-56 overflow-y-auto custom-scrollbar p-1.5 space-y-0.5">
+                                {filteredCategories.length === 0 && (
+                                  <div className="p-3 text-center text-xs text-neutral-500 font-sans">
+                                    Loading categories...
+                                  </div>
+                                )}
+                                {filteredCategories.length > 0 && (() => {
+                                  const filtered = filteredCategories.filter(cat => 
+                                    cat.toLowerCase().includes(categorySearchQuery.toLowerCase())
+                                  );
+                                  if (filtered.length === 0) {
+                                    return (
+                                      <div className="p-3 text-center text-xs text-neutral-500 font-sans">
+                                        No categories match "{categorySearchQuery}"
+                                      </div>
+                                    );
+                                  }
+                                  return filtered.map(cat => {
+                                    const isSelected = cat === selectedCategory;
+                                    return (
+                                      <button
+                                        key={cat}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedCategory(cat);
+                                          setIsCategoryDropdownOpen(false);
+                                          setCategorySearchQuery('');
+                                        }}
+                                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs text-left cursor-pointer transition-all ${
+                                          isSelected 
+                                            ? 'bg-white/10 text-white font-semibold border-l-2 border-white' 
+                                            : 'text-neutral-400 hover:text-white hover:bg-white/[0.04]'
+                                        }`}
+                                      >
+                                        <span className="truncate">{cat} Services</span>
+                                        {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                                      </button>
+                                    );
+                                  });
+                                })()}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </div>
 
-                    {/* Charge right label preview card */}
-                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-between">
-                      <div className="text-[10px] font-bold text-neutral-400 uppercase font-mono tracking-wider">
-                        Estimated Charge
+                      {/* Service select dropdown */}
+                      <div className="relative">
+                        <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
+                          Service
+                        </label>
+                        <button
+                          type="button"
+                          id="custom-service-dropdown-trigger"
+                          onClick={() => {
+                            setIsServiceDropdownOpen(!isServiceDropdownOpen);
+                            setIsCategoryDropdownOpen(false); // close other dropdown
+                          }}
+                          className="w-full flex items-center justify-between px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 hover:border-white/20 focus:border-white focus:outline-none transition-all text-left font-sans leading-relaxed cursor-pointer"
+                        >
+                          <span className="truncate max-w-[90%] block">
+                            {(() => {
+                              const s = servicesCatalog.find(s => s.id === selectedServiceId);
+                              if (s) {
+                                return `${s.name} — ₹${getInrRate(s)}/1k`;
+                              }
+                              return 'Select a Service';
+                            })()}
+                          </span>
+                          <ChevronDown className={`w-4 h-4 ml-2 shrink-0 text-neutral-500 transition-transform duration-200 ${isServiceDropdownOpen ? 'rotate-180 text-white' : ''}`} />
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        {isServiceDropdownOpen && (
+                          <>
+                            {/* Overlay to handle click outside */}
+                            <div 
+                              className="fixed inset-0 z-40 bg-transparent" 
+                              onClick={() => {
+                                setIsServiceDropdownOpen(false);
+                                setServiceSearchQuery('');
+                              }} 
+                            />
+                            
+                            <div className="absolute left-0 right-0 z-50 mt-1.5 rounded-xl border border-white/10 bg-neutral-950/95 backdrop-blur-xl shadow-[0_10px_30px_rgba(0,0,0,0.9)] overflow-hidden transition-all duration-200 font-sans">
+                              {/* Search Bar */}
+                              <div className="p-2 border-b border-white/5 flex items-center gap-2 bg-neutral-900/50">
+                                <Search className="w-3.5 h-3.5 text-neutral-500 ml-1 shrink-0" />
+                                <input
+                                  type="text"
+                                  placeholder="Search service name or ID..."
+                                  value={serviceSearchQuery}
+                                  onChange={(e) => setServiceSearchQuery(e.target.value)}
+                                  className="w-full bg-transparent border-none text-[11px] text-white focus:outline-none placeholder-neutral-600 font-sans"
+                                />
+                                {serviceSearchQuery && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setServiceSearchQuery('')}
+                                    className="text-[10px] text-neutral-500 hover:text-white px-1.5 py-0.5"
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Service Items */}
+                              <div className="max-h-60 overflow-y-auto custom-scrollbar p-1.5 space-y-0.5">
+                                {filteredServicesForOrder.length === 0 && (
+                                  <div className="p-3 text-center text-xs text-neutral-500 font-sans">
+                                    No services available for this category
+                                  </div>
+                                )}
+                                {filteredServicesForOrder.length > 0 && (() => {
+                                  const filtered = filteredServicesForOrder.filter(s => 
+                                    s.name.toLowerCase().includes(serviceSearchQuery.toLowerCase()) ||
+                                    String(s.id).includes(serviceSearchQuery)
+                                  );
+                                  if (filtered.length === 0) {
+                                    return (
+                                      <div className="p-3 text-center text-xs text-neutral-500 font-sans">
+                                        No services match "{serviceSearchQuery}"
+                                      </div>
+                                    );
+                                  }
+                                  return filtered.map(service => {
+                                    const isSelected = service.id === selectedServiceId;
+                                    return (
+                                      <button
+                                        key={service.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedServiceId(service.id);
+                                          setIsServiceDropdownOpen(false);
+                                          setServiceSearchQuery('');
+                                        }}
+                                        className={`w-full flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg text-xs text-left cursor-pointer transition-all ${
+                                          isSelected 
+                                            ? 'bg-white/10 text-white font-semibold border-l-2 border-white font-sans' 
+                                            : 'text-neutral-400 hover:text-white hover:bg-white/[0.04] font-sans'
+                                        }`}
+                                      >
+                                        <div className="flex flex-col gap-0.5 min-w-0 flex-1 text-left">
+                                          <span className="break-words whitespace-normal leading-normal font-sans pr-1">
+                                            {service.name}
+                                          </span>
+                                          <span className="text-[9px] text-neutral-500 font-mono mt-0.5">ID: #{service.id}</span>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1 shrink-0 text-right pt-0.5">
+                                          <span className="text-[11px] font-mono text-emerald-400 font-bold whitespace-nowrap">
+                                            ₹{getInrRate(service)}/1k
+                                          </span>
+                                          {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                                        </div>
+                                      </button>
+                                    );
+                                  });
+                                })()}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        {/* Service Description display */}
+                        <div className="mt-2.5 p-3.5 rounded-xl bg-neutral-950/80 text-[11px] text-neutral-300 leading-relaxed font-sans border border-white/5 break-words">
+                          {renderDescription(servicesCatalog.find(s => s.id === selectedServiceId)?.description || '')}
+                        </div>
                       </div>
-                      <div className="flex items-baseline justify-between mt-1">
-                        <span className="text-2xl font-black text-white font-mono">
-                          ₹{calcCharge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
-                        <span className="text-[10px] text-neutral-500 font-mono">
-                          ₹{getInrRate(servicesCatalog.find(s => s.id === selectedServiceId) || servicesCatalog[0])} / 1k
-                        </span>
+
+                      {/* Target URL input */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
+                          Link
+                        </label>
+                        <div className="relative">
+                          <input
+                            id="order-target-link"
+                            type="url"
+                            required
+                            placeholder="e.g. https://www.instagram.com/p/..."
+                            value={targetUrl}
+                            onChange={(e) => setTargetUrl(e.target.value)}
+                            className="w-full px-4 py-3 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all placeholder-neutral-600 font-sans"
+                          />
+                        </div>
+                        <p className="mt-1.5 text-[10px] text-neutral-500 font-sans">
+                          Your account or post must be set to public.
+                        </p>
                       </div>
-                      <div className="text-[9px] text-neutral-500 font-mono mt-1 pt-1 border-t border-white/5 flex justify-between">
-                        <span>Remaining Balance:</span>
-                        <span className="font-bold text-neutral-400">
-                          ₹{(currentBalance - calcCharge >= 0 ? currentBalance - calcCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
+
+                      {/* Quantity and Charge side-by-side columns (Screenshot 2 style!) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        
+                        {/* Quantity left input */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
+                            Quantity
+                          </label>
+                          <input
+                            id="order-quantity-input"
+                            type="number"
+                            required
+                            step="1"
+                            value={orderQuantity}
+                            onChange={(e) => setOrderQuantity(Math.max(1, parseInt(e.target.value) || 0))}
+                            className="w-full px-4 py-3 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all placeholder-neutral-600 font-mono font-bold"
+                          />
+                          <div className="mt-1.5 flex justify-between text-[9px] text-neutral-500 font-mono">
+                            <span>Min: {servicesCatalog.find(s => s.id === selectedServiceId)?.min.toLocaleString() || '100'}</span>
+                            <span>Max: {servicesCatalog.find(s => s.id === selectedServiceId)?.max.toLocaleString() || '50,000'}</span>
+                          </div>
+                        </div>
+
+                        {/* Charge right label preview card */}
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-between">
+                          <div className="text-[10px] font-bold text-neutral-400 uppercase font-mono tracking-wider">
+                            Estimated Charge
+                          </div>
+                          <div className="flex items-baseline justify-between mt-1">
+                            <span className="text-2xl font-black text-white font-mono">
+                              ₹{calcCharge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-[10px] text-neutral-500 font-mono">
+                              ₹{getInrRate(servicesCatalog.find(s => s.id === selectedServiceId) || servicesCatalog[0])} / 1k
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-neutral-500 font-mono mt-1 pt-1 border-t border-white/5 flex justify-between">
+                            <span>Remaining Balance:</span>
+                            <span className="font-bold text-neutral-400">
+                              ₹{(currentBalance - calcCharge >= 0 ? currentBalance - calcCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+
                       </div>
-                    </div>
+
+                      {/* Submission and guidelines footer */}
+                      <div className="pt-3 space-y-3.5">
+                        <button
+                          id="submit-order-form-btn"
+                          type="submit"
+                          className="w-full py-3.5 rounded-xl text-xs font-black bg-white text-black hover:bg-neutral-200 cursor-pointer shadow-[0_0_15px_rgba(255,255,255,0.15)] transition-all uppercase tracking-wider"
+                        >
+                          Place Order
+                        </button>
+                        
+                        <div className="text-center text-[10px] text-neutral-500 font-mono">
+                          * Orders start processing instantly. Automatic refund if the order fails.
+                        </div>
+                      </div>
+
+                    </form>
 
                   </div>
-
-                  {/* Submission and guidelines footer */}
-                  <div className="pt-3 space-y-3.5">
-                    <button
-                      id="submit-order-form-btn"
-                      type="submit"
-                      className="w-full py-3.5 rounded-xl text-xs font-black bg-white text-black hover:bg-neutral-200 cursor-pointer shadow-[0_0_15px_rgba(255,255,255,0.15)] transition-all uppercase tracking-wider"
-                    >
-                      Place Order
-                    </button>
-                    
-                    <div className="text-center text-[10px] text-neutral-500 font-mono">
-                      * Orders start processing instantly. Automatic refund if the order fails.
-                    </div>
-                  </div>
-
-                </form>
-
-              </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1826,19 +2443,11 @@ export default function Dashboard({
                           </h3>
                         </div>
 
-                        {/* 3-column Grid stats matching Screenshot 1 */}
-                        <div className="grid grid-cols-3 gap-2 border-t border-b border-white/[0.05] py-3.5 my-2.5 text-center">
+                        {/* Elegant metric border display for Quantity */}
+                        <div className="border-t border-b border-white/[0.05] py-3 my-2 text-center bg-white/[0.01] rounded-lg">
                           <div>
-                            <div className="text-[9px] text-neutral-500 font-bold uppercase font-mono tracking-wider">Start</div>
-                            <div className="text-xs font-mono font-extrabold text-neutral-300 mt-1">{getStartVal(order)}</div>
-                          </div>
-                          <div className="border-l border-r border-white/[0.05]">
-                            <div className="text-[9px] text-neutral-500 font-bold uppercase font-mono tracking-wider">Remains</div>
-                            <div className="text-xs font-mono font-extrabold text-neutral-300 mt-1">{getRemainsVal(order)}</div>
-                          </div>
-                          <div>
-                            <div className="text-[9px] text-neutral-500 font-bold uppercase font-mono tracking-wider">Quantity</div>
-                            <div className="text-xs font-mono font-extrabold text-white mt-1">{order.quantity}</div>
+                            <div className="text-[10px] text-neutral-500 font-bold uppercase font-mono tracking-wider">Quantity</div>
+                            <div className="text-sm font-mono font-black text-white mt-0.5">{order.quantity.toLocaleString()}</div>
                           </div>
                         </div>
 
@@ -2413,7 +3022,7 @@ export default function Dashboard({
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div>
                             <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider text-red-500">Provider API Synchronization</h3>
-                            <p className="text-[10px] text-neutral-400 mt-1">Sync your services and categories directly with the SMM provider.</p>
+                            <p className="text-[10px] text-neutral-400 mt-1">Sync your services and categories directly with the provider.</p>
                           </div>
                           <div className="flex gap-2">
                             <button
@@ -2462,7 +3071,7 @@ export default function Dashboard({
                       {/* Profit Markup controller */}
                       <form onSubmit={handleSaveSettings} className="rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-5">
                         <div>
-                          <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Dynamic SMM Pricing Markup</h3>
+                          <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Dynamic Pricing Markup</h3>
                           <p className="text-[10px] text-neutral-400 mt-1 leading-normal">
                             Set your markup percentage. When services are retrieved from the provider API, our site adds this markup to calculate the final end-user rate.
                           </p>
@@ -2488,7 +3097,7 @@ export default function Dashboard({
                           <div className="p-3.5 rounded-xl bg-black border border-white/5 space-y-1.5 font-sans text-[11px] text-neutral-400 leading-normal">
                             <div>• Provider Base Price (for ₹100 API cost) = <strong>₹100</strong></div>
                             <div>• Your User Will Pay = ₹100 + {editMarkup}% Markup = <strong>₹{(100 * (1 + editMarkup/100))}</strong></div>
-                            <div>• Direct Simulated Profit Margin = <strong>{editMarkup}%</strong></div>
+                            <div>• Net Profit Margin = <strong>{editMarkup}%</strong></div>
                           </div>
                         </div>
 
@@ -2509,7 +3118,7 @@ export default function Dashboard({
                         <div>
                           <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Landing Page Showcase Video</h3>
                           <p className="text-[10px] text-neutral-400 mt-1 leading-normal">
-                            Directly alter the YouTube embed source link. This dynamically switches the guides showcase player shown on the front landing gates of SMM Panel.
+                            Directly alter the YouTube embed source link. This dynamically switches the guides showcase player shown on the front landing gates of FollowLike.
                           </p>
                         </div>
 
@@ -2677,7 +3286,7 @@ export default function Dashboard({
                       {/* Transactions History */}
                       <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 space-y-4">
                         <div>
-                          <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Network Simulated Billing Ledgers</h3>
+                          <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Network Billing Ledgers</h3>
                           <p className="text-[10px] text-neutral-400 mt-1">Audit of deposits and currency credits registered across the system.</p>
                         </div>
 
@@ -2720,8 +3329,8 @@ export default function Dashboard({
                       {/* Orders Pipelines */}
                       <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 space-y-4">
                         <div>
-                          <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Automated API Order Pipeline Audits</h3>
-                          <p className="text-[10px] text-neutral-400 mt-1">Status logs of orders forwarded automatically to our underlying API provider.</p>
+                          <h3 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Order Pipeline Audits</h3>
+                          <p className="text-[10px] text-neutral-400 mt-1">Status logs of orders processed across the network.</p>
                         </div>
 
                         <div className="overflow-x-auto">
@@ -2729,7 +3338,7 @@ export default function Dashboard({
                             <thead>
                               <tr className="text-neutral-500 border-b border-white/5 uppercase text-[9px] tracking-wider">
                                 <th className="pb-2.5">Internal Ref</th>
-                                <th className="pb-2.5">Provider SMM ID</th>
+                                <th className="pb-2.5">Provider ID</th>
                                 <th className="pb-2.5">User</th>
                                 <th className="pb-2.5">Service Code</th>
                                 <th className="pb-2.5">Target Link</th>
@@ -2741,7 +3350,7 @@ export default function Dashboard({
                               {adminOrders.length === 0 ? (
                                 <tr>
                                   <td colSpan={7} className="py-6 text-center text-neutral-500">
-                                    No orders submitted to the provider SMM interface yet.
+                                    No orders submitted to the provider interface yet.
                                   </td>
                                 </tr>
                               ) : (
@@ -2801,7 +3410,7 @@ export default function Dashboard({
                   onClick={() => setActiveTab('home')}
                   className="p-5 rounded-2xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-left transition-all space-y-3 flex flex-col justify-between"
                 >
-                  <Globe className="w-6 h-6 text-neutral-400" />
+                  <Globe className="w-6 h-6 text-neutral-400 animate-loop-spin-slow" />
                   <div>
                     <h3 className="text-xs font-semibold text-white font-mono uppercase tracking-wider">Home</h3>
                     <p className="text-[10px] text-neutral-400 mt-1 leading-normal">View your account summary and quick statistics.</p>
@@ -2812,7 +3421,7 @@ export default function Dashboard({
                   onClick={() => setActiveTab('services')}
                   className="p-5 rounded-2xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-left transition-all space-y-3 flex flex-col justify-between"
                 >
-                  <Layers className="w-6 h-6 text-neutral-400" />
+                  <Layers className="w-6 h-6 text-neutral-400 animate-loop-float" />
                   <div>
                     <h3 className="text-xs font-semibold text-white font-mono uppercase tracking-wider">Services & Pricing</h3>
                     <p className="text-[10px] text-neutral-400 mt-1 leading-normal">View all list prices and order limits.</p>
@@ -2823,7 +3432,7 @@ export default function Dashboard({
                   onClick={() => setActiveTab('support')}
                   className="p-5 rounded-2xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-left transition-all space-y-3 flex flex-col justify-between"
                 >
-                  <MessageSquare className="w-6 h-6 text-neutral-400" />
+                  <MessageSquare className="w-6 h-6 text-neutral-400 animate-loop-wiggle" />
                   <div>
                     <h3 className="text-xs font-semibold text-white font-mono uppercase tracking-wider">WhatsApp</h3>
                     <p className="text-[10px] text-neutral-400 mt-1 leading-normal">Contact our support team directly.</p>
@@ -2834,7 +3443,7 @@ export default function Dashboard({
                   onClick={() => setActiveTab('profile')}
                   className="p-5 rounded-2xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] text-left transition-all space-y-3 flex flex-col justify-between"
                 >
-                  <User className="w-6 h-6 text-neutral-400" />
+                  <User className="w-6 h-6 text-neutral-400 animate-loop-breathe" />
                   <div>
                     <h3 className="text-xs font-semibold text-white font-mono uppercase tracking-wider">Account</h3>
                     <p className="text-[10px] text-neutral-400 mt-1 leading-normal">View account details and database setup SQL.</p>
@@ -2867,7 +3476,7 @@ export default function Dashboard({
               activeTab === 'menu' ? 'text-white font-bold' : 'text-neutral-500 hover:text-white'
             }`}
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-5 h-5 animate-loop-float" />
             <span className="text-[10px] mt-1 tracking-tight font-sans font-bold">Menu</span>
           </button>
 
@@ -2878,7 +3487,7 @@ export default function Dashboard({
               activeTab === 'orders' ? 'text-white font-bold' : 'text-neutral-500 hover:text-white'
             }`}
           >
-            <Clock className="w-5 h-5" />
+            <Clock className="w-5 h-5 animate-loop-clock" />
             <span className="text-[10px] mt-1 tracking-tight font-sans font-bold">Orders</span>
           </button>
 
@@ -2888,7 +3497,7 @@ export default function Dashboard({
               onClick={() => setActiveTab('new-order')}
               className="absolute -top-6 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-[0_-2px_10px_rgba(255,255,255,0.2),0_4px_10px_rgba(0,0,0,0.5)] border-4 border-black transition-all hover:scale-110 active:scale-95 cursor-pointer"
             >
-              <Plus className="w-6 h-6" strokeWidth={3} />
+              <Plus className="w-6 h-6 animate-loop-pulse-gentle" strokeWidth={3} />
             </button>
           </div>
 
@@ -2899,7 +3508,7 @@ export default function Dashboard({
               activeTab === 'funds' ? 'text-white font-bold' : 'text-neutral-500 hover:text-white'
             }`}
           >
-            <CreditCard className="w-5 h-5" />
+            <CreditCard className="w-5 h-5 animate-loop-card" />
             <span className="text-[10px] mt-1 tracking-tight font-sans font-bold">Add Funds</span>
           </button>
 
@@ -2910,7 +3519,7 @@ export default function Dashboard({
               activeTab === 'profile' ? 'text-white font-bold' : 'text-neutral-500 hover:text-white'
             }`}
           >
-            <User className="w-5 h-5" />
+            <User className="w-5 h-5 animate-loop-breathe" />
             <span className="text-[10px] mt-1 tracking-tight font-sans font-bold">Account</span>
           </button>
 

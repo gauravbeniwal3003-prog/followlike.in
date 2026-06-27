@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { SMMOrder, UserSession, Transaction } from '../types';
 
-const SUPABASE_URL = 'https://mfrnehshclymmydtykpa.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mcm5laHNoY2x5bW15ZHR5a3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzQyNjUsImV4cCI6MjA5NzcxMDI2NX0.dhdfx9xURndzS6MSSsZmH5HI0O59VAY8Vfl7UZt4yxM';
+const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://mfrnehshclymmydtykpa.supabase.co';
+const SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mcm5laHNoY2x5bW15ZHR5a3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzQyNjUsImV4cCI6MjA5NzcxMDI2NX0.dhdfx9xURndzS6MSSsZmH5HI0O59VAY8Vfl7UZt4yxM';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -220,10 +220,10 @@ export async function getDbOrders(email: string): Promise<SMMOrder[]> {
 
     return (data || []).map(row => ({
       id: row.id,
-      serviceId: row.service_id,
-      serviceName: row.service_name || 'SMM Service',
+      serviceId: row.service_id || '',
+      serviceName: row.service_name || `Service #${row.service_id || ''}`,
       category: row.category || 'General',
-      targetUrl: row.target_url,
+      targetUrl: row.target_url || row.link || '',
       quantity: row.quantity,
       charge: parseFloat(row.charge),
       status: row.status as any,
@@ -239,7 +239,54 @@ export async function getDbOrders(email: string): Promise<SMMOrder[]> {
 // Helper: Create order
 export async function createDbOrder(email: string, order: SMMOrder): Promise<boolean> {
   try {
-    const { error } = await supabase
+    // Attempt 1: Try inserting with maximum column match combining both schemas
+    const schema1Result = await supabase
+      .from('orders')
+      .insert({
+        id: order.id,
+        user_email: email,
+        service_id: order.serviceId,
+        service_name: order.serviceName,
+        category: order.category,
+        target_url: order.targetUrl,
+        link: order.targetUrl,
+        quantity: order.quantity,
+        charge: order.charge,
+        original_rate: order.charge,
+        status: order.status,
+        created_at: order.createdAt,
+        provider_order_id: order.providerOrderId
+      });
+
+    if (!schema1Result.error) {
+      return true;
+    }
+
+    console.warn('Unified insertion scheme failed, trying fallback scheme 2 (database.sql format):', schema1Result.error);
+
+    // Attempt 2: minimal fallback insertion matching database.sql standard schema
+    const schema2Result = await supabase
+      .from('orders')
+      .insert({
+        user_email: email,
+        service_id: order.serviceId,
+        original_rate: order.charge,
+        charge: order.charge,
+        link: order.targetUrl,
+        quantity: order.quantity,
+        status: order.status,
+        created_at: order.createdAt,
+        provider_order_id: order.providerOrderId
+      });
+
+    if (!schema2Result.error) {
+      return true;
+    }
+
+    console.warn('Fallback scheme 2 failed, trying fallback scheme 3 (frontend specific):', schema2Result.error);
+
+    // Attempt 3: Frontend-only custom schema format
+    const schema3Result = await supabase
       .from('orders')
       .insert({
         id: order.id,
@@ -253,13 +300,14 @@ export async function createDbOrder(email: string, order: SMMOrder): Promise<boo
         provider_order_id: order.providerOrderId
       });
 
-    if (error) {
-      console.error('Supabase order insert error:', error);
+    if (schema3Result.error) {
+      console.error('All order insertion schemes failed:', schema3Result.error);
       return false;
     }
+
     return true;
   } catch (err) {
-    console.error(err);
+    console.error('Exception during order database insertion:', err);
     return false;
   }
 }

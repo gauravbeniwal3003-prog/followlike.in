@@ -13,7 +13,7 @@ function hashPassword(password: string): string {
 }
 
 // Base SMM Configuration
-let SMM_API_KEY = process.env.SMM_API_KEY || "4f875a1ab9fc4c8ca31cb98a6e82e98c";
+let SMM_API_KEY = process.env.SMM_API_KEY || "";
 let SMM_API_URL = process.env.SMM_API_URL || "https://socialuphub-backend.onrender.com/api/v2";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://mfrnehshclymmydtykpa.supabase.co";
@@ -80,6 +80,9 @@ async function callSmmApi(payload: Record<string, string>) {
     await loadServerSettings();
     if (!payload.key || payload.key === "null" || payload.key === "") {
       payload.key = SMM_API_KEY;
+    }
+    if (!payload.key || payload.key.trim() === "" || payload.key === "null") {
+      throw new Error("SMM API Key is not configured. Please define SMM_API_KEY as an environment variable or set it in your Supabase global_settings table.");
     }
     const bodyParams = new URLSearchParams();
     for (const [key, value] of Object.entries(payload)) {
@@ -677,6 +680,28 @@ app.post("/api/smm/order", async (req, res) => {
   }
 
   try {
+    // 0. Prevent double same service on same link (active orders check)
+    const { data: existingActiveOrders } = await supabase
+      .from("orders")
+      .select("id, status, service_id, target_url, link")
+      .in("status", ["Pending", "In Progress", "Processing"]);
+
+    if (existingActiveOrders) {
+      const isDuplicate = existingActiveOrders.some((row: any) => {
+        const matchesService = String(row.service_id) === String(serviceId);
+        const matchesLink = (row.target_url && String(row.target_url).trim().toLowerCase() === String(targetUrl).trim().toLowerCase()) ||
+                            (row.link && String(row.link).trim().toLowerCase() === String(targetUrl).trim().toLowerCase());
+        return matchesService && matchesLink;
+      });
+
+      if (isDuplicate) {
+        return res.status(400).json({
+          success: false,
+          error: "DUPLICATE_ORDER_ERROR: An active order for this exact service and link is already being processed. Please wait for the current order to complete before placing another."
+        });
+      }
+    }
+
     // 1. Verify Real-time Price Before Placing Order
     const dbServiceReq = await supabase
       .from("smm_services")
