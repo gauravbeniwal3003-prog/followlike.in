@@ -91,21 +91,19 @@ const REQUIRED_SCHEMAS: RequiredTable[] = [
   {
     name: 'transactions',
     columns: [
-      { name: 'id', type: 'uuid', definition: 'id uuid primary key default gen_random_uuid()' },
+      { name: 'id', type: 'text', definition: 'id text primary key' },
       { name: 'user_email', type: 'text', definition: 'user_email text not null' },
       { name: 'amount', type: 'numeric', definition: 'amount numeric not null' },
-      { name: 'type', type: 'text', definition: 'type text not null' },
-      { name: 'status', type: 'text', definition: 'status text not null default \'completed\'' },
-      { name: 'description', type: 'text', definition: 'description text' },
+      { name: 'method', type: 'text', definition: 'method text not null' },
+      { name: 'status', type: 'text', definition: 'status text not null default \'Success\'' },
       { name: 'created_at', type: 'timestamp with time zone', definition: 'created_at timestamp with time zone default now()' }
     ],
     sqlCreate: `CREATE TABLE IF NOT EXISTS public.transactions (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_email text not null,
   amount numeric not null,
-  type text not null,
-  status text not null default 'completed',
-  description text,
+  method text not null,
+  status text not null default 'Success',
   created_at timestamp with time zone default now()
 );`
   },

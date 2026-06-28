@@ -40,12 +40,11 @@ CREATE TABLE IF NOT EXISTS public.orders (
 );
 
 CREATE TABLE IF NOT EXISTS public.transactions (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   user_email text not null,
   amount numeric not null,
-  type text not null,
-  status text not null default 'completed',
-  description text,
+  method text not null,
+  status text not null default 'Success',
   created_at timestamp with time zone default now()
 );
 

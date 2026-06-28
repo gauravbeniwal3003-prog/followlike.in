@@ -315,22 +315,48 @@ export async function createDbOrder(email: string, order: SMMOrder): Promise<boo
 // Helper: Log transaction
 export async function logDbTransaction(email: string, tx: Transaction): Promise<boolean> {
   try {
-    const { error } = await supabase
-      .from('transactions')
-      .insert({
-        id: tx.id,
-        user_email: email,
-        amount: tx.amount,
-        method: tx.method,
-        status: tx.status,
-        created_at: tx.createdAt
-      });
-    if (error) {
-      console.error(error);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tx.id);
+    
+    // Attempt 1: Schema A (id text/uuid, type, description, status)
+    const payloadA: any = {
+      user_email: email,
+      amount: tx.amount,
+      type: tx.method,
+      status: tx.status || 'Success',
+      created_at: tx.createdAt || new Date().toISOString(),
+      description: tx.id
+    };
+    if (isUuid) {
+      payloadA.id = tx.id;
+    }
+
+    const { error: errorA } = await supabase.from('transactions').insert(payloadA);
+    if (!errorA) {
+      return true;
+    }
+
+    console.warn('logDbTransaction Schema A failed, trying Schema B:', errorA);
+
+    // Attempt 2: Schema B (id, method, status)
+    const payloadB: any = {
+      user_email: email,
+      amount: tx.amount,
+      method: tx.method,
+      status: tx.status || 'Success',
+      created_at: tx.createdAt || new Date().toISOString()
+    };
+    if (isUuid || typeof tx.id === 'string') {
+      payloadB.id = tx.id;
+    }
+
+    const { error: errorB } = await supabase.from('transactions').insert(payloadB);
+    if (errorB) {
+      console.error('All transaction logging schemes failed:', errorB);
       return false;
     }
     return true;
   } catch (err) {
+    console.error('Exception logging transaction:', err);
     return false;
   }
 }
@@ -349,9 +375,9 @@ export async function getDbTransactions(email: string): Promise<Transaction[]> {
       return [];
     }
     return (data || []).map(row => ({
-      id: row.id,
+      id: row.description || row.id,
       amount: parseFloat(row.amount),
-      method: row.method,
+      method: row.method || row.type || 'Razorpay Gateway',
       status: row.status as any,
       createdAt: row.created_at
     }));

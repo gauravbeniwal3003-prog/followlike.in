@@ -521,15 +521,43 @@ async def verify_razorpay_payment(req: RazorpayVerifyRequest):
 
         supabase.table("profiles").update({"balance": new_balance}).eq("email", req.email).execute()
 
-        # Insert Transaction log
-        supabase.table("transactions").insert({
-            "id": req.razorpay_payment_id,
+        # Insert Transaction log with schema fallback
+        import re
+        is_uuid = bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', req.razorpay_payment_id, re.IGNORECASE))
+        
+        # Try Schema A (id text/uuid, type, description, status)
+        payloadA = {
             "user_email": req.email,
             "amount": req.amount,
-            "method": f"Razorpay INR Gateway{method_suffix}",
+            "type": f"Razorpay INR Gateway{method_suffix}",
             "status": "Success",
-            "created_at": datetime.datetime.utcnow().isoformat() + "Z"
-        }).execute()
+            "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "description": req.razorpay_payment_id
+        }
+        if is_uuid:
+            payloadA["id"] = req.razorpay_payment_id
+            
+        try:
+            supabase.table("transactions").insert(payloadA).execute()
+        except Exception as e:
+            print(f"Schema A insert failed, trying Schema B: {e}")
+            # Try Schema B (id, method, status)
+            payloadB = {
+                "user_email": req.email,
+                "amount": req.amount,
+                "method": f"Razorpay INR Gateway{method_suffix}",
+                "status": "Success",
+                "created_at": datetime.datetime.utcnow().isoformat() + "Z"
+            }
+            if is_uuid:
+                payloadB["id"] = req.razorpay_payment_id
+            else:
+                payloadB["id"] = req.razorpay_payment_id
+                
+            try:
+                supabase.table("transactions").insert(payloadB).execute()
+            except Exception as eb:
+                print(f"All transaction schema inserts failed: {eb}")
 
         return {
             "success": True,
@@ -651,7 +679,14 @@ async def get_transactions():
     if not supabase: return {"success": False}
     try:
         tx = supabase.table('transactions').select('*').order('created_at', desc=True).execute().data or []
-        return {"success": True, "transactions": tx, "pendingRecharges": [], "recharges": []}
+        mapped_tx = []
+        for t in tx:
+            mapped_tx.append({
+                **t,
+                "id": t.get("description") or t.get("id"),
+                "method": t.get("method") or t.get("type") or "Razorpay Gateway"
+            })
+        return {"success": True, "transactions": mapped_tx, "pendingRecharges": [], "recharges": []}
     except:
         return {"success": False}
 

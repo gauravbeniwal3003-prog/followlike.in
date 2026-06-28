@@ -21,6 +21,61 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPA
 
 const supabase = createClient(SUPABASE_URL as string, SUPABASE_ANON_KEY as string);
 
+// Robust helper to insert transactions into Supabase regardless of exact schema (id as UUID vs TEXT, method vs type)
+async function insertTransactionSafe(tx: {
+  id: string;
+  user_email: string;
+  amount: number;
+  method: string;
+  status?: string;
+  created_at?: string;
+}) {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tx.id);
+  const statusVal = tx.status || "Success";
+  const dateVal = tx.created_at || new Date().toISOString();
+
+  // Try Schema A (Remote database default: id as UUID generated, type, description, status)
+  // Since remote table has id as uuid, we don't pass 'id' if it's a non-uuid. We put the non-uuid in 'description' column.
+  const payloadA: any = {
+    user_email: tx.user_email,
+    amount: tx.amount,
+    type: tx.method,
+    status: statusVal,
+    created_at: dateVal,
+    description: tx.id // Store the transaction reference/razorpay ID in description
+  };
+  if (isUuid) {
+    payloadA.id = tx.id;
+  }
+
+  const { error: errorA } = await supabase.from("transactions").insert(payloadA);
+  if (!errorA) {
+    return { success: true };
+  }
+
+  console.warn("insertTransactionSafe Schema A failed, trying Schema B:", errorA);
+
+  // Try Schema B (Fallback: passing id as provided and 'method' column)
+  const payloadB: any = {
+    user_email: tx.user_email,
+    amount: tx.amount,
+    method: tx.method,
+    status: statusVal,
+    created_at: dateVal
+  };
+  if (isUuid || typeof tx.id === "string") {
+    payloadB.id = tx.id;
+  }
+
+  const { error: errorB } = await supabase.from("transactions").insert(payloadB);
+  if (!errorB) {
+    return { success: true };
+  }
+
+  console.error("insertTransactionSafe Schema B failed too:", errorB);
+  return { success: false, error: errorB };
+}
+
 let PROFIT_MARKUP_PERCENT = 15;
 let LANDING_VIDEO_URL = ""; // Removed rickroll demo video
 let PINNED_CATEGORY = "";
@@ -492,16 +547,14 @@ async function syncIncompleteOrders() {
 
               // 3. Log Refund Transaction in database
               const refundTxId = "TXN-REF" + Math.floor(100000 + Math.random() * 900000);
-              await supabase
-                .from("transactions")
-                .insert({
-                  id: refundTxId,
-                  user_email: order.user_email,
-                  amount: refundValue,
-                  method: "Cancellation Refund",
-                  status: "Success",
-                  created_at: new Date().toISOString()
-                });
+              await insertTransactionSafe({
+                id: refundTxId,
+                user_email: order.user_email,
+                amount: refundValue,
+                method: "Cancellation Refund",
+                status: "Success",
+                created_at: new Date().toISOString()
+              });
 
               refundCount++;
             }
@@ -1218,19 +1271,17 @@ app.post("/api/smm/payments/verify", async (req, res) => {
       return res.status(500).json({ error: "Failed to update balance in wallet" });
     }
 
-    const { error: txErr } = await supabase
-      .from("transactions")
-      .insert({
-        id: razorpay_payment_id,
-        user_email: email,
-        amount: amount,
-        method: `Razorpay INR Gateway${methodSuffix}`,
-        status: "Success",
-        created_at: new Date().toISOString(),
-      });
+    const txResult = await insertTransactionSafe({
+      id: razorpay_payment_id,
+      user_email: email,
+      amount: amount,
+      method: `Razorpay INR Gateway${methodSuffix}`,
+      status: "Success",
+      created_at: new Date().toISOString(),
+    });
 
-    if (txErr) {
-      console.error("Failed to log transaction:", txErr);
+    if (!txResult.success) {
+      console.error("Failed to log transaction:", txResult.error);
     }
 
     res.json({
@@ -1887,9 +1938,16 @@ app.get("/api/smm/admin/transactions", async (req, res) => {
       .from("transactions")
       .select("*")
       .order("created_at", { ascending: false });
+
+    const mappedTransactions = (transactions || []).map((t: any) => ({
+      ...t,
+      id: t.description || t.id,
+      method: t.method || t.type || 'Razorpay Gateway',
+    }));
+
     res.json({
       success: true,
-      transactions: transactions || [],
+      transactions: mappedTransactions,
       pendingRecharges: [],
       recharges: [],
     });
@@ -2204,16 +2262,14 @@ app.post("/api/smm/admin/orders/update", async (req, res) => {
           .eq("email", currentOrder.user_email);
 
         const refundTxId = "TXN-REF" + Math.floor(100000 + Math.random() * 900000);
-        await supabase
-          .from("transactions")
-          .insert({
-            id: refundTxId,
-            user_email: currentOrder.user_email,
-            amount: refundValue,
-            method: "Cancellation Refund",
-            status: "Success",
-            created_at: new Date().toISOString()
-          });
+        await insertTransactionSafe({
+          id: refundTxId,
+          user_email: currentOrder.user_email,
+          amount: refundValue,
+          method: "Cancellation Refund",
+          status: "Success",
+          created_at: new Date().toISOString()
+        });
       }
     }
 

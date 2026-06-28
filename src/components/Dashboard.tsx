@@ -559,7 +559,7 @@ export default function Dashboard({
             const newTx: Transaction = {
               id: row.id,
               amount: parseFloat(row.amount),
-              method: row.method,
+              method: row.method || row.type || 'Razorpay Gateway',
               status: row.status as any,
               createdAt: row.created_at
             };
@@ -571,7 +571,7 @@ export default function Dashboard({
             const row = payload.new;
             const updatedTx: Partial<Transaction> = {
               amount: row.amount ? parseFloat(row.amount) : undefined,
-              method: row.method,
+              method: row.method || row.type,
               status: row.status as any,
               createdAt: row.created_at
             };
@@ -3456,7 +3456,7 @@ export default function Dashboard({
                                       <td className="py-3 font-bold select-all text-neutral-400">{tx.id}</td>
                                       <td className="py-3 text-neutral-300">{tx.user_email || 'gauravbeniwal30003@gmail.com'}</td>
                                       <td className="py-3 text-right font-bold text-white">₹{parseFloat(tx.amount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                      <td className="py-3 text-neutral-400 truncate max-w-xs">{tx.method}</td>
+                                      <td className="py-3 text-neutral-400 truncate max-w-xs">{tx.method || tx.type || 'Razorpay Gateway'}</td>
                                       <td className="py-3 text-right text-neutral-500">
                                         {new Date(tx.created_at || tx.createdAt).toLocaleDateString()} {new Date(tx.created_at || tx.createdAt).toLocaleTimeString()}
                                       </td>
