@@ -584,7 +584,7 @@ export default function LandingPage({
                   </a>
                 </li>
                 <li>
-                  <a href="https://wa.me/918168285559" target="_blank" rel="noopener noreferrer" className="flex items-center hover:text-white transition-colors group">
+                  <a href="https://wa.me/919536678651" target="_blank" rel="noopener noreferrer" className="flex items-center hover:text-white transition-colors group">
                     <MessageSquare className="w-3.5 h-3.5 mr-2 text-neutral-500 group-hover:text-white" />
                     24/7 WhatsApp Support
                   </a>

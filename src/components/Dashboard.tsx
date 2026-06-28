@@ -995,53 +995,145 @@ export default function Dashboard({
     }
   };
 
-  // Action: Add Funds Demo Simulator
+  // Helper: Dynamically load external scripts (Razorpay SDK)
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  // Action: Live Razorpay Payment Gateway Integration
   const handleAddFunds = async (e: React.FormEvent) => {
     e.preventDefault();
     if (paymentAmount <= 0) {
       setFundsNotification('Please input a positive funding amount.');
       return;
     }
-
-    let bonusFactor = 1.0;
-    if (appliedCoupon) {
-      bonusFactor = 1.0 + (appliedCoupon.discount_percent / 100);
+    if (paymentAmount < 100) {
+      setFundsNotification('Minimum deposit amount is ₹100.');
+      return;
     }
-    const paymentWithBonus = Math.round(paymentAmount * bonusFactor * 100) / 100;
-    const newBalance = currentBalance + paymentWithBonus;
-    const txId = 'TXN-' + Math.floor(100000 + Math.random() * 900000);
 
-    const fullMethodName = appliedCoupon 
-      ? `${paymentMethod} [Coupon: ${appliedCoupon.code} (+${appliedCoupon.discount_percent}% Bonus)]`
-      : paymentMethod;
-
-    const newTx: Transaction = {
-      id: txId,
-      amount: paymentAmount, // Base payment
-      method: fullMethodName,
-      status: 'Success',
-      createdAt: new Date().toISOString()
-    };
-
-    // Save to Supabase
-    const txLogged = await logDbTransaction(session.email, newTx);
-    if (txLogged) {
-      await saveBalanceToStorage(newBalance);
-      setTransactions(prev => [newTx, ...prev]);
+    try {
+      setFundsNotification('Initializing payment gateway order... Please wait.');
       
-      const extraMsg = appliedCoupon 
-        ? ` Applied a ${appliedCoupon.discount_percent}% extra bonus! Credited Total ₹${paymentWithBonus.toFixed(2)} immediately.`
-        : '';
+      // 1. Create Razorpay Order on Backend
+      const orderResp = await fetch('/api/smm/payments/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: paymentAmount,
+          email: session.email,
+          couponCode: appliedCoupon ? appliedCoupon.code : null
+        })
+      });
 
-      setFundsNotification(`Success! Deposited via ${paymentMethod}.${extraMsg}`);
-      setPaymentAmount(1000); // Reset template
-      setCouponCode('');
-      setAppliedCoupon(null);
-      setCouponValidationNotice(null);
-    } else {
-      setFundsNotification('Failed to process transaction on your Supabase ledger. Please confirm sql rules.');
+      const orderData = await orderResp.json();
+      if (!orderData.success) {
+        setFundsNotification(`Order Creation Failed: ${orderData.error || 'Unknown server error'}`);
+        return;
+      }
+
+      // 2. Load Razorpay Client SDK Script
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        setFundsNotification('Failed to load payment gateway assets. Please check your network connection.');
+        return;
+      }
+
+      setFundsNotification('Opening secure payment gateway...');
+
+      // 3. Trigger Razorpay Standard Checkout Popup Modal
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "SMM Panel",
+        description: `Add ₹${paymentAmount} to wallet balance`,
+        image: "https://api.dicebear.com/7.x/initials/svg?seed=SMMPanel&backgroundColor=000000",
+        order_id: orderData.orderId,
+        handler: async function (response: any) {
+          try {
+            setFundsNotification('Securing and verifying transaction signature...');
+            
+            // 4. Send verification details to safe backend
+            const verifyResp = await fetch('/api/smm/payments/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                email: session.email,
+                amount: paymentAmount,
+                couponCode: appliedCoupon ? appliedCoupon.code : null
+              })
+            });
+
+            const verifyData = await verifyResp.json();
+            if (verifyData.success) {
+              // Update state locally
+              setCurrentBalance(verifyData.newBalance);
+              setFundsNotification(verifyData.message || `Successfully added ₹${paymentAmount} to your wallet balance.`);
+
+              // Insert transaction object to local list
+              const bonusFactor = appliedCoupon ? (1.0 + appliedCoupon.discount_percent / 100) : 1.0;
+              const actualCredited = Math.round(paymentAmount * bonusFactor * 100) / 100;
+
+              const newTx: Transaction = {
+                id: response.razorpay_payment_id,
+                amount: paymentAmount,
+                method: `Razorpay INR Gateway` + (appliedCoupon ? ` [Coupon: ${appliedCoupon.code} (+${appliedCoupon.discount_percent}% Bonus)]` : ''),
+                status: 'Success',
+                createdAt: new Date().toISOString()
+              };
+
+              setTransactions(prev => [newTx, ...prev]);
+
+              // Reset inputs
+              setPaymentAmount(1000);
+              setCouponCode('');
+              setAppliedCoupon(null);
+              setCouponValidationNotice(null);
+            } else {
+              setFundsNotification(`Payment verification failed: ${verifyData.error || 'Invalid signature signature'}`);
+            }
+          } catch (verifyErr) {
+            console.error('Signature verification call error:', verifyErr);
+            setFundsNotification('Connection failed while validating payment with secure server ledger.');
+          }
+        },
+        prefill: {
+          name: session.name || "",
+          email: session.email,
+          contact: ""
+        },
+        theme: {
+          color: "#e11d48" // matches SMM design red theme color
+        },
+        modal: {
+          ondismiss: function () {
+            setFundsNotification('Payment transaction cancelled by user.');
+            setTimeout(() => setFundsNotification(null), 4000);
+          }
+        }
+      };
+
+      const paymentWindow = new (window as any).Razorpay(options);
+      paymentWindow.open();
+
+    } catch (err: any) {
+      console.error('Razorpay process flow failed:', err);
+      setFundsNotification(`System error: ${err.message || 'Payment engine offline.'}`);
     }
-    setTimeout(() => setFundsNotification(null), 8000);
   };
 
   // Action: API token regeneration
@@ -2633,21 +2725,6 @@ export default function Dashboard({
                 {/* Form Card (Screenshot 3 configuration!) */}
                 <form id="add-funds-sim-form" onSubmit={handleAddFunds} className="md:col-span-7 rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-5">
                   
-                  {/* Label & Selector for Method */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
-                      Payment System Method
-                    </label>
-                    <select
-                      id="funds-gateway-select"
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-full px-4 py-3.5 text-xs text-white rounded-xl bg-neutral-950 border border-white/10 focus:border-white focus:outline-none transition-all"
-                    >
-                      <option value="Razorpay Netbanking">Razorpay INR Gateway (UPI, Cards, Netbanking)</option>
-                    </select>
-                  </div>
-
                   {/* Input and labels matching Screenshot 3 */}
                   <div>
                     <label className="block text-[10px] font-bold text-neutral-500 mb-2 uppercase font-mono tracking-wider">
@@ -2798,7 +2875,7 @@ export default function Dashboard({
                   </div>
 
                   <a
-                    href="https://wa.me/918168285559"
+                    href="https://wa.me/919536678651"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block w-full py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase tracking-widest text-sm transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_20px_rgba(16,185,129,0.3)]"

@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import cors from "cors";
+import Razorpay from "razorpay";
 
 dotenv.config();
 
@@ -1106,6 +1107,141 @@ app.get("/api/smm/settings", async (req, res) => {
       pinned_category: PINNED_CATEGORY,
     },
   });
+});
+
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "rzp_live_RzLdEkePrpnfd4";
+const RAZORPAY_SECRET = process.env.RAZORPAY_SECRET || "4wiJs8mHjvhbes6JRZFd35hT";
+
+const rzp = new Razorpay({
+  key_id: RAZORPAY_KEY_ID,
+  key_secret: RAZORPAY_SECRET,
+});
+
+// Endpoint: Create order for Razorpay payment
+app.post("/api/smm/payments/create-order", async (req, res) => {
+  const { amount, email, couponCode } = req.body;
+  if (!amount || amount < 100) {
+    return res.status(400).json({ error: "Invalid amount. Minimum is ₹100." });
+  }
+  if (!email) {
+    return res.status(400).json({ error: "Email is required." });
+  }
+
+  try {
+    const options = {
+      amount: Math.round(amount * 100),
+      currency: "INR",
+      receipt: "rcpt_" + Math.random().toString(36).substring(2, 15),
+    };
+
+    const order = await rzp.orders.create(options);
+
+    res.json({
+      success: true,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: RAZORPAY_KEY_ID,
+    });
+  } catch (error: any) {
+    console.error("Razorpay order creation error:", error);
+    res.status(500).json({ error: error.message || "Failed to create Razorpay order" });
+  }
+});
+
+// Endpoint: Verify payment and update wallet balance safely
+app.post("/api/smm/payments/verify", async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, email, amount, couponCode } = req.body;
+
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !email || !amount) {
+    return res.status(400).json({ error: "Missing verification parameters" });
+  }
+
+  try {
+    const generated_signature = crypto
+      .createHmac("sha256", RAZORPAY_SECRET)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .digest("hex");
+
+    if (generated_signature !== razorpay_signature) {
+      return res.status(400).json({ error: "Signature verification failed" });
+    }
+
+    const { data: existingTx } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("id", razorpay_payment_id)
+      .maybeSingle();
+
+    if (existingTx) {
+      return res.status(400).json({ error: "Transaction has already been processed" });
+    }
+
+    let bonusFactor = 1.0;
+    let methodSuffix = "";
+    if (couponCode) {
+      const cleanCode = String(couponCode).trim().toUpperCase();
+      const { data: coupon } = await supabase
+        .from("coupons")
+        .select("*")
+        .eq("code", cleanCode)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (coupon) {
+        bonusFactor = 1.0 + (coupon.discount_percent / 100);
+        methodSuffix = ` [Coupon: ${cleanCode} (+${coupon.discount_percent}% Bonus)]`;
+      }
+    }
+
+    const finalAmountCredited = Math.round(amount * bonusFactor * 100) / 100;
+
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select("balance")
+      .eq("email", email)
+      .single();
+
+    if (profileErr || !profile) {
+      return res.status(404).json({ error: "User profile not found" });
+    }
+
+    const currentBalance = parseFloat(profile.balance || "0");
+    const newBalance = currentBalance + finalAmountCredited;
+
+    const { error: updateErr } = await supabase
+      .from("profiles")
+      .update({ balance: newBalance })
+      .eq("email", email);
+
+    if (updateErr) {
+      return res.status(500).json({ error: "Failed to update balance in wallet" });
+    }
+
+    const { error: txErr } = await supabase
+      .from("transactions")
+      .insert({
+        id: razorpay_payment_id,
+        user_email: email,
+        amount: amount,
+        method: `Razorpay INR Gateway${methodSuffix}`,
+        status: "Success",
+        created_at: new Date().toISOString(),
+      });
+
+    if (txErr) {
+      console.error("Failed to log transaction:", txErr);
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully credited ₹${finalAmountCredited} to your wallet!`,
+      newBalance: newBalance,
+    });
+  } catch (error: any) {
+    console.error("Razorpay verification error:", error);
+    res.status(500).json({ error: error.message || "Failed to verify signature" });
+  }
 });
 
 app.post("/api/smm/settings/update", async (req, res) => {

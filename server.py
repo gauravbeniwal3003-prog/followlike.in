@@ -5,6 +5,7 @@ import string
 import urllib.parse
 import httpx
 import asyncio
+import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -43,6 +44,19 @@ admin_services_cache = None
 services_cache = None
 
 # --- Data Pydantic Models ---
+class RazorpayCreateOrderRequest(BaseModel):
+    amount: float
+    email: str
+    couponCode: Optional[str] = None
+
+class RazorpayVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    email: str
+    amount: float
+    couponCode: Optional[str] = None
+
 class SyncRequest(BaseModel):
     force_reset: bool = False
 
@@ -421,9 +435,137 @@ async def create_order(req: OrderRequest):
         print(f"Failed to place order via SMM API: {e}")
         return {"success": False, "error": f"Failed to place order: {str(e)}"}
 
+@app.post("/api/smm/payments/create-order")
+async def create_razorpay_order(req: RazorpayCreateOrderRequest):
+    if req.amount < 100:
+        raise HTTPException(status_code=400, detail="Invalid amount. Minimum is ₹100.")
+    if not req.email:
+        raise HTTPException(status_code=400, detail="Email is required.")
+
+    key_id = os.environ.get("RAZORPAY_KEY_ID", "rzp_live_RzLdEkePrpnfd4")
+    secret = os.environ.get("RAZORPAY_SECRET", "4wiJs8mHjvhbes6JRZFd35hT")
+
+    try:
+        receipt_id = "rcpt_" + "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.razorpay.com/v1/orders",
+                auth=(key_id, secret),
+                json={
+                    "amount": int(round(req.amount * 100)),
+                    "currency": "INR",
+                    "receipt": receipt_id
+                }
+            )
+            if resp.status_code != 200:
+                print(f"Razorpay order creation status failed: {resp.status_code} {resp.text}")
+                raise HTTPException(status_code=resp.status_code, detail=resp.json().get("error", {}).get("description", "Failed to create Razorpay order"))
+            
+            order_data = resp.json()
+            return {
+                "success": True,
+                "orderId": order_data.get("id"),
+                "amount": order_data.get("amount"),
+                "currency": order_data.get("currency"),
+                "keyId": key_id
+            }
+    except Exception as e:
+        print(f"Razorpay python error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/smm/payments/verify")
+async def verify_razorpay_payment(req: RazorpayVerifyRequest):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+
+    secret = os.environ.get("RAZORPAY_SECRET", "4wiJs8mHjvhbes6JRZFd35hT")
+    
+    # Verify Signature
+    import hmac
+    msg = f"{req.razorpay_order_id}|{req.razorpay_payment_id}"
+    generated_sig = hmac.new(
+        secret.encode("utf-8"),
+        msg.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+
+    if generated_sig != req.razorpay_signature:
+        raise HTTPException(status_code=400, detail="Signature verification failed")
+
+    try:
+        # Check if transaction already processed
+        existing = supabase.table("transactions").select("*").eq("id", req.razorpay_payment_id).execute()
+        if existing.data:
+            raise HTTPException(status_code=400, detail="Transaction already processed")
+
+        # Check Coupon
+        bonus_factor = 1.0
+        method_suffix = ""
+        if req.couponCode:
+            clean_code = req.couponCode.strip().upper()
+            coupon = supabase.table("coupons").select("*").eq("code", clean_code).eq("is_active", True).execute()
+            if coupon.data:
+                disc = coupon.data[0].get("discount_percent", 0)
+                bonus_factor = 1.0 + (disc / 100)
+                method_suffix = f" [Coupon: {clean_code} (+{disc}% Bonus)]"
+
+        final_amount_credited = round(req.amount * bonus_factor, 2)
+
+        # Update wallet balance
+        profile = supabase.table("profiles").select("balance").eq("email", req.email).execute()
+        if not profile.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+
+        current_balance = float(profile.data[0].get("balance") or 0.0)
+        new_balance = current_balance + final_amount_credited
+
+        supabase.table("profiles").update({"balance": new_balance}).eq("email", req.email).execute()
+
+        # Insert Transaction log
+        supabase.table("transactions").insert({
+            "id": req.razorpay_payment_id,
+            "user_email": req.email,
+            "amount": req.amount,
+            "method": f"Razorpay INR Gateway{method_suffix}",
+            "status": "Success",
+            "created_at": datetime.datetime.utcnow().isoformat() + "Z"
+        }).execute()
+
+        return {
+            "success": True,
+            "message": f"Successfully credited ₹{final_amount_credited} to your wallet!",
+            "newBalance": new_balance
+        }
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Verification exception: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/")
+@app.head("/")
+async def root_ping():
+    return {"status": "ok", "message": "SMM Panel Backend is fully operational"}
+
 @app.get("/api/health")
+@app.head("/api/health")
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "message": "SMM Panel Backend is fully operational"}
+
+@app.get("/health")
+@app.head("/health")
+async def general_health():
+    return {"status": "ok", "message": "SMM Panel Backend is fully operational"}
+
+@app.get("/ping")
+@app.head("/ping")
+async def ping_pong():
+    return {"status": "ok", "message": "pong"}
+
+@app.get("/api/ping")
+@app.head("/api/ping")
+async def api_ping_pong():
+    return {"status": "ok", "message": "pong"}
 
 @app.post("/api/smm/admin/login")
 async def admin_login(req: LoginRequest):
