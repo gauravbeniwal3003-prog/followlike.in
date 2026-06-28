@@ -1162,8 +1162,8 @@ app.get("/api/smm/settings", async (req, res) => {
   });
 });
 
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "rzp_live_RzLdEkePrpnfd4";
-const RAZORPAY_SECRET = process.env.RAZORPAY_SECRET || "4wiJs8mHjvhbes6JRZFd35hT";
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "rzp_live_T725kg1O2tcBFy";
+const RAZORPAY_SECRET = process.env.RAZORPAY_SECRET || "sl670ifjKlPNZwTjRQK71uUv";
 
 const rzp = new Razorpay({
   key_id: RAZORPAY_KEY_ID,

@@ -442,8 +442,8 @@ async def create_razorpay_order(req: RazorpayCreateOrderRequest):
     if not req.email:
         raise HTTPException(status_code=400, detail="Email is required.")
 
-    key_id = os.environ.get("RAZORPAY_KEY_ID", "rzp_live_RzLdEkePrpnfd4")
-    secret = os.environ.get("RAZORPAY_SECRET", "4wiJs8mHjvhbes6JRZFd35hT")
+    key_id = os.environ.get("RAZORPAY_KEY_ID", "rzp_live_T725kg1O2tcBFy")
+    secret = os.environ.get("RAZORPAY_SECRET", "sl670ifjKlPNZwTjRQK71uUv")
 
     try:
         receipt_id = "rcpt_" + "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
@@ -478,7 +478,7 @@ async def verify_razorpay_payment(req: RazorpayVerifyRequest):
     if not supabase:
         raise HTTPException(status_code=500, detail="Supabase not configured")
 
-    secret = os.environ.get("RAZORPAY_SECRET", "4wiJs8mHjvhbes6JRZFd35hT")
+    secret = os.environ.get("RAZORPAY_SECRET", "sl670ifjKlPNZwTjRQK71uUv")
     
     # Verify Signature
     import hmac
