@@ -650,7 +650,7 @@ async def toggle_ban(req: ToggleBanRequest):
 async def get_transactions():
     if not supabase: return {"success": False}
     try:
-        tx = supabase.table('transactions').select('*').execute().data or []
+        tx = supabase.table('transactions').select('*').order('created_at', desc=True).execute().data or []
         return {"success": True, "transactions": tx, "pendingRecharges": [], "recharges": []}
     except:
         return {"success": False}

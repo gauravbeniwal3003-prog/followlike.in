@@ -2838,6 +2838,60 @@ export default function Dashboard({
                 </div>
 
               </div>
+
+              {/* Individual Transaction History */}
+              <div className="space-y-4 pt-6 border-t border-white/5">
+                <h3 className="text-sm font-bold uppercase font-mono tracking-wider text-neutral-400">
+                  Your Transaction History
+                </h3>
+                {transactions.length === 0 ? (
+                  <div className="border border-white/5 rounded-2xl bg-white/[0.01] p-8 text-center text-neutral-500 font-mono text-xs">
+                    <CreditCard className="w-8 h-8 opacity-20 mx-auto mb-3 text-neutral-400" />
+                    No transaction history recorded yet. Use the payment checkout above to add funds.
+                  </div>
+                ) : (
+                  <div className="border border-white/5 rounded-2xl bg-white/[0.01] overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono min-w-[600px]">
+                      <thead>
+                        <tr className="bg-black/40 text-neutral-500 uppercase tracking-wider text-[9px]">
+                          <th className="p-4">Tx ID</th>
+                          <th className="p-4">Payment Method</th>
+                          <th className="p-4 text-right">Amount</th>
+                          <th className="p-4 text-center">Status</th>
+                          <th className="p-4 text-right">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {transactions.map((tx) => {
+                          const isRefund = tx.method && tx.method.toLowerCase().includes('refund');
+                          return (
+                            <tr key={tx.id} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="p-4 font-bold text-white text-[11px]">
+                                {tx.id}
+                              </td>
+                              <td className="p-4 text-neutral-300">
+                                {tx.method}
+                              </td>
+                              <td className={`p-4 text-right font-bold ${isRefund ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                ₹{tx.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="p-4 text-center">
+                                <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded text-[9px] uppercase font-bold border border-emerald-500/20">
+                                  {tx.status || 'Success'}
+                                </span>
+                              </td>
+                              <td className="p-4 text-right text-neutral-500 text-[10px]">
+                                {new Date(tx.createdAt).toLocaleString('en-IN')}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
 
@@ -3395,17 +3449,19 @@ export default function Dashboard({
                                   </td>
                                 </tr>
                               ) : (
-                                adminTransactions.map((tx, idx) => (
-                                  <tr key={tx.id || idx} className="hover:bg-white/[0.02]">
-                                    <td className="py-3 font-bold select-all text-neutral-400">{tx.id}</td>
-                                    <td className="py-3 text-neutral-300">{tx.user_email || 'gauravbeniwal30003@gmail.com'}</td>
-                                    <td className="py-3 text-right font-bold text-white">₹{parseFloat(tx.amount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                    <td className="py-3 text-neutral-400 truncate max-w-xs">{tx.method}</td>
-                                    <td className="py-3 text-right text-neutral-500">
-                                      {new Date(tx.created_at || tx.createdAt).toLocaleDateString()} {new Date(tx.created_at || tx.createdAt).toLocaleTimeString()}
-                                    </td>
-                                  </tr>
-                                ))
+                                [...adminTransactions]
+                                  .sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime())
+                                  .map((tx, idx) => (
+                                    <tr key={tx.id || idx} className="hover:bg-white/[0.02]">
+                                      <td className="py-3 font-bold select-all text-neutral-400">{tx.id}</td>
+                                      <td className="py-3 text-neutral-300">{tx.user_email || 'gauravbeniwal30003@gmail.com'}</td>
+                                      <td className="py-3 text-right font-bold text-white">₹{parseFloat(tx.amount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                      <td className="py-3 text-neutral-400 truncate max-w-xs">{tx.method}</td>
+                                      <td className="py-3 text-right text-neutral-500">
+                                        {new Date(tx.created_at || tx.createdAt).toLocaleDateString()} {new Date(tx.created_at || tx.createdAt).toLocaleTimeString()}
+                                      </td>
+                                    </tr>
+                                  ))
                               )}
                             </tbody>
                           </table>
