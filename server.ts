@@ -1120,8 +1120,8 @@ const rzp = new Razorpay({
 // Endpoint: Create order for Razorpay payment
 app.post("/api/smm/payments/create-order", async (req, res) => {
   const { amount, email, couponCode } = req.body;
-  if (!amount || amount < 100) {
-    return res.status(400).json({ error: "Invalid amount. Minimum is ₹100." });
+  if (!amount || amount < 1) {
+    return res.status(400).json({ error: "Invalid amount. Minimum is ₹1." });
   }
   if (!email) {
     return res.status(400).json({ error: "Email is required." });

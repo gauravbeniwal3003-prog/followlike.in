@@ -1017,8 +1017,8 @@ export default function Dashboard({
       setFundsNotification('Please input a positive funding amount.');
       return;
     }
-    if (paymentAmount < 100) {
-      setFundsNotification('Minimum deposit amount is ₹100.');
+    if (paymentAmount < 1) {
+      setFundsNotification('Minimum deposit amount is ₹1.');
       return;
     }
 
@@ -2735,9 +2735,9 @@ export default function Dashboard({
                         id="funds-amount-input"
                         type="number"
                         required
-                        min="100"
+                        min="1"
                         max="100000"
-                        step="100"
+                        step="1"
                         placeholder="e.g. 500"
                         value={paymentAmount || ''}
                         onChange={(e) => setPaymentAmount(Math.max(0, parseFloat(e.target.value) || 0))}
@@ -2745,7 +2745,7 @@ export default function Dashboard({
                       />
                     </div>
                     <p className="mt-1.5 text-[10px] text-neutral-500 font-sans">
-                      Limits: ₹100 - ₹100,000
+                      Limits: ₹1 - ₹100,000
                     </p>
                   </div>
 

@@ -437,8 +437,8 @@ async def create_order(req: OrderRequest):
 
 @app.post("/api/smm/payments/create-order")
 async def create_razorpay_order(req: RazorpayCreateOrderRequest):
-    if req.amount < 100:
-        raise HTTPException(status_code=400, detail="Invalid amount. Minimum is ₹100.")
+    if req.amount < 1:
+        raise HTTPException(status_code=400, detail="Invalid amount. Minimum is ₹1.")
     if not req.email:
         raise HTTPException(status_code=400, detail="Email is required.")
 
